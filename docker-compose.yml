@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  ras-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ras-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Монтируем БД для персистентности
+      - ./ras_bot.db:/app/ras_bot.db
+      # Монтируем конфиг для возможности изменений без пересборки
+      - ./config.yaml:/app/config.yaml:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    # Healthcheck для мониторинга
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sqlite3; sqlite3.connect('/app/ras_bot.db')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    # Логирование
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
