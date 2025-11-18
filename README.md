@@ -125,7 +125,7 @@ RAS Bot поддерживает интеграцию с WHOOP для получ
    - Зарегистрируйтесь на https://developer.whoop.com/
    - Создайте новое приложение
    - Получите `Client ID` и `Client Secret`
-   - Укажите Redirect URL: `https://t.me/RAS_AI_bot?start=whoop_auth`
+   - Укажите Redirect URL: `https://scanovich.ai/whoop-callback.html` (будет настроен в шаге 4)
    - Разместите Privacy Policy на вашем сайте (например, `scanovich.ai/privacy`)
 
 2. **Добавьте учетные данные в `.env`:**
