@@ -80,19 +80,58 @@ class WhoopClient:
             raise ValueError("WHOOP API not configured")
 
         try:
+            # Очищаем code от возможных лишних символов (если пользователь скопировал весь URL)
+            code = authorization_code.split("&")[0].split("?")[0].strip()
+            
             data = {
                 "grant_type": "authorization_code",
                 "client_id": self.config.client_id,
                 "client_secret": self.config.client_secret,
-                "code": authorization_code,
+                "code": code,
                 "redirect_uri": self.config.redirect_uri,
             }
+
+            logger.info(
+                "Exchanging authorization code for tokens",
+                extra={
+                    "user_id": user_id,
+                    "code_length": len(code),
+                    "code_preview": code[:20] + "..." if len(code) > 20 else code,
+                    "redirect_uri": self.config.redirect_uri,
+                    "client_id": self.config.client_id[:20] + "..." if self.config.client_id else None,
+                },
+            )
+
+            # Логируем данные запроса (без секретов)
+            log_data = {k: v if k != "client_secret" else "***" for k, v in data.items()}
+            logger.debug("Token exchange request data", extra={"data": log_data})
 
             response = await self.client.post(
                 self.config.token_url,
                 data=data,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
+
+            # Логируем детали ответа для отладки
+            if response.status_code != 200:
+                try:
+                    error_data = response.json()
+                    logger.error(
+                        "WHOOP token exchange failed",
+                        extra={
+                            "status_code": response.status_code,
+                            "error": error_data,
+                            "response_text": response.text[:500],
+                        },
+                    )
+                except Exception:
+                    logger.error(
+                        "WHOOP token exchange failed",
+                        extra={
+                            "status_code": response.status_code,
+                            "response_text": response.text[:500],
+                        },
+                    )
 
             response.raise_for_status()
             token_data = response.json()
@@ -102,6 +141,10 @@ class WhoopClient:
             expires_in = token_data.get("expires_in", 3600)
 
             if not access_token or not refresh_token:
+                logger.error(
+                    "Invalid token response structure",
+                    extra={"response_keys": list(token_data.keys())},
+                )
                 raise ValueError("Invalid token response from WHOOP")
 
             # Сохраняем токены в БД
@@ -116,13 +159,27 @@ class WhoopClient:
             }
 
         except httpx.HTTPStatusError as e:
+            error_msg = f"Failed to exchange code: {e.response.status_code}"
+            try:
+                error_data = e.response.json()
+                if "error" in error_data:
+                    error_msg += f" - {error_data.get('error')}"
+                if "error_description" in error_data:
+                    error_msg += f": {error_data.get('error_description')}"
+            except Exception:
+                error_msg += f" - {e.response.text[:200]}"
+            
             logger.error(
                 "Failed to exchange code for tokens",
-                extra={"status_code": e.response.status_code, "error": e.response.text},
+                extra={
+                    "status_code": e.response.status_code,
+                    "error": error_msg,
+                    "response_text": e.response.text[:500],
+                },
             )
-            raise ValueError(f"Failed to exchange code: {e.response.status_code}") from e
+            raise ValueError(error_msg) from e
         except Exception as e:
-            logger.error("Unexpected error exchanging code", extra={"error": str(e)})
+            logger.error("Unexpected error exchanging code", extra={"error": str(e)}, exc_info=True)
             raise ValueError(f"Failed to exchange code: {str(e)}") from e
 
     async def refresh_access_token(self, user_id: int) -> str:

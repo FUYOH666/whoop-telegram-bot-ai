@@ -73,6 +73,9 @@ class RASBot:
         # Команда /whoop_connect
         self.router.message.register(self._handle_whoop_connect, Command("whoop_connect"))
 
+        # Команда /whoop_code для ручного ввода authorization code
+        self.router.message.register(self._handle_whoop_code, Command("whoop_code"))
+
         # Обработка callback от inline-кнопок
         self.router.callback_query.register(
             self._handle_button_callback, F.data.startswith("slot_")
@@ -118,8 +121,27 @@ class RASBot:
 
         # Проверяем, есть ли параметр для WHOOP OAuth callback
         if message.text and "whoop_auth" in message.text:
-            # Обрабатываем OAuth callback от WHOOP
-            await self._handle_whoop_callback(message)
+            # Пытаемся извлечь code из текста сообщения (на случай если Telegram передаст)
+            text = message.text or ""
+            code = None
+            
+            # Пробуем найти code в тексте (может быть передан как часть deep link)
+            if "code=" in text:
+                try:
+                    # Извлекаем code из строки вида "whoop_auth code=XXX" или "whoop_auth?code=XXX"
+                    import re
+                    match = re.search(r'code=([^&\s]+)', text)
+                    if match:
+                        code = match.group(1)
+                except Exception:
+                    pass
+            
+            if code:
+                # Если code найден, обрабатываем сразу
+                await self._handle_whoop_code_direct(message, code)
+            else:
+                # Иначе показываем инструкцию
+                await self._handle_whoop_callback(message)
             return
 
         welcome_text = (
@@ -261,9 +283,14 @@ class RASBot:
             auth_url = self.whoop_client.get_authorization_url(user_id)
 
             await message.answer(
-                "Для подключения WHOOP перейди по ссылке и авторизуйся:\n\n"
-                f"{auth_url}\n\n"
-                "После авторизации ты будешь перенаправлен обратно в бота."
+                "🔗 Для подключения WHOOP:\n\n"
+                f"1. Перейди по ссылке: {auth_url}\n\n"
+                "2. Авторизуйся в WHOOP\n\n"
+                "3. После авторизации скопируй authorization code из адресной строки браузера\n"
+                "   (он будет в параметре `code=` в URL)\n\n"
+                "4. Отправь команду: `/whoop_code <твой_code>`\n\n"
+                "Например: `/whoop_code abc123xyz456`\n\n"
+                "⚠️ **Важно:** Telegram не передает code автоматически, поэтому нужен ручной ввод."
             )
             logger.info("WHOOP connect initiated", extra={"user_id": user_id})
 
@@ -279,24 +306,83 @@ class RASBot:
             await message.answer("WHOOP клиент не инициализирован.")
             return
 
-        try:
-            # Извлекаем authorization code из параметров deep link
-            # Формат: /start whoop_auth?code=XXX&state=YYY
-            text = message.text or ""
-            code = None
+        # Telegram не передает query параметры в deep link
+        # Показываем инструкцию для ручного ввода code
+        await message.answer(
+            "🔗 После авторизации в WHOOP ты будешь перенаправлен обратно.\n\n"
+            "⚠️ Telegram не передает authorization code автоматически.\n\n"
+            "📋 **Что делать:**\n"
+            "1. После авторизации скопируй authorization code из адресной строки браузера\n"
+            "2. Отправь команду: `/whoop_code <твой_code>`\n\n"
+            "Например: `/whoop_code abc123xyz456`\n\n"
+            "Или попробуй подключиться заново через /whoop_connect"
+        )
 
-            # Парсим параметры из текста сообщения
-            if "code=" in text:
-                parts = text.split("code=")
-                if len(parts) > 1:
-                    code_part = parts[1].split("&")[0].split(" ")[0]
-                    code = code_part.strip()
+    async def _handle_whoop_code_direct(self, message: Message, code: str) -> None:
+        """Прямая обработка authorization code (из deep link)."""
+        user_id = message.from_user.id
+
+        if not self.whoop_client or not self.config.whoop.is_configured:
+            await message.answer(
+                "WHOOP API не настроен. Пожалуйста, настройте WHOOP_CLIENT_ID и WHOOP_CLIENT_SECRET в .env файле."
+            )
+            return
+
+        try:
+            # Обмениваем code на токены
+            await self.whoop_client.exchange_code_for_tokens(user_id, code)
+
+            await message.answer(
+                "✅ WHOOP успешно подключен!\n\n"
+                "Теперь в вечернем слоте S6 ты будешь получать физические показатели "
+                "(Recovery, Sleep, Strain, Workouts) вместе с оценкой дня.\n\n"
+                "Данные будут автоматически обновляться каждый день в 22:00."
+            )
+            logger.info("WHOOP connected successfully via deep link", extra={"user_id": user_id})
+
+        except Exception as e:
+            logger.error("Failed to handle WHOOP code from deep link", extra={"error": str(e), "user_id": user_id})
+            # Если автоматическая обработка не сработала, показываем инструкцию
+            await message.answer(
+                f"⚠️ Не удалось автоматически обработать authorization code.\n\n"
+                f"Попробуй вручную:\n"
+                f"1. Скопируй code из URL браузера\n"
+                f"2. Отправь команду: `/whoop_code <твой_code>`\n\n"
+                f"Code из URL: `{code[:50]}...`"
+            )
+
+    async def _handle_whoop_code(self, message: Message) -> None:
+        """Обработчик команды /whoop_code для ручного ввода authorization code."""
+        user_id = message.from_user.id
+
+        if not self.whoop_client or not self.config.whoop.is_configured:
+            await message.answer(
+                "WHOOP API не настроен. Пожалуйста, настройте WHOOP_CLIENT_ID и WHOOP_CLIENT_SECRET в .env файле."
+            )
+            return
+
+        try:
+            # Извлекаем code из команды: /whoop_code <code>
+            text = message.text or ""
+            parts = text.split(maxsplit=1)
+            
+            if len(parts) < 2:
+                await message.answer(
+                    "❌ Не указан authorization code.\n\n"
+                    "Использование: `/whoop_code <твой_code>`\n\n"
+                    "Например: `/whoop_code abc123xyz456`\n\n"
+                    "Получить code можно через /whoop_connect"
+                )
+                return
+
+            code = parts[1].strip()
+            
+            # Очищаем code от возможных лишних параметров (если пользователь скопировал весь URL)
+            # Удаляем все после первого & или пробела
+            code = code.split("&")[0].split("?")[0].split()[0].strip()
 
             if not code:
-                await message.answer(
-                    "Не удалось получить authorization code. "
-                    "Попробуй подключиться заново через /whoop_connect"
-                )
+                await message.answer("❌ Authorization code не может быть пустым.")
                 return
 
             # Обмениваем code на токены
@@ -305,16 +391,27 @@ class RASBot:
             await message.answer(
                 "✅ WHOOP успешно подключен!\n\n"
                 "Теперь в вечернем слоте S6 ты будешь получать физические показатели "
-                "(Recovery, Sleep, Strain, Workouts) вместе с оценкой дня."
+                "(Recovery, Sleep, Strain, Workouts) вместе с оценкой дня.\n\n"
+                "Данные будут автоматически обновляться каждый день в 22:00."
             )
-            logger.info("WHOOP connected successfully", extra={"user_id": user_id})
+            logger.info("WHOOP connected successfully via manual code", extra={"user_id": user_id})
 
         except Exception as e:
-            logger.error("Failed to handle WHOOP callback", extra={"error": str(e), "user_id": user_id})
-            await message.answer(
-                f"Произошла ошибка при подключении WHOOP: {str(e)}\n\n"
-                "Попробуй подключиться заново через /whoop_connect"
-            )
+            logger.error("Failed to handle WHOOP code", extra={"error": str(e), "user_id": user_id})
+            error_msg = str(e)
+            if "Failed to exchange code" in error_msg or "401" in error_msg or "400" in error_msg:
+                await message.answer(
+                    f"❌ Не удалось подключить WHOOP: {error_msg}\n\n"
+                    "Возможные причины:\n"
+                    "• Authorization code уже использован или истек\n"
+                    "• Неверный code\n\n"
+                    "Попробуй подключиться заново через /whoop_connect"
+                )
+            else:
+                await message.answer(
+                    f"❌ Произошла ошибка при подключении WHOOP: {error_msg}\n\n"
+                    "Попробуй подключиться заново через /whoop_connect"
+                )
 
     async def send_slot_message(self, slot_id: str, user_id: int) -> None:
         """
