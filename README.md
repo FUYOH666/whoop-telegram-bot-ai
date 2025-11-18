@@ -134,14 +134,24 @@ RAS Bot поддерживает интеграцию с WHOOP для получ
    WHOOP_CLIENT_SECRET=your_client_secret_here
    ```
 
-3. **Подключите WHOOP в боте:**
+3. **Включите GitHub Pages (проще всего):**
+   - Откройте репозиторий: https://github.com/FUYOH666/RAS-TGbot
+   - Settings → Pages → Source: **Deploy from a branch** → Branch: **main** → Folder: **/docs**
+   - Сохраните и подождите 1-2 минуты
+   - Страница будет доступна: `https://fuyoh666.github.io/RAS-TGbot/whoop-callback.html`
+
+4. **Обновите Redirect URL в WHOOP Developer Platform:**
+   - Откройте настройки вашего приложения в WHOOP Developer Platform
+   - Измените Redirect URL на: `https://fuyoh666.github.io/RAS-TGbot/whoop-callback.html`
+   - Сохраните изменения
+
+5. **Подключите WHOOP в боте:**
    - Отправьте команду `/whoop_connect` боту
    - Перейдите по ссылке и авторизуйтесь в WHOOP
-   - После авторизации скопируйте authorization code из адресной строки браузера (параметр `code=` в URL)
+   - После авторизации вы будете перенаправлены на страницу `scanovich.ai/whoop-callback.html`
+   - На странице будет показан authorization code - скопируйте его
    - Отправьте команду `/whoop_code <ваш_code>` боту
-   - Например: `/whoop_code abc123xyz456`
-
-   **Примечание:** Telegram не передает query параметры из deep link автоматически, поэтому требуется ручной ввод authorization code.
+   - Или используйте кнопку на странице для быстрого перехода в бота
 
 ### Как это работает
 
