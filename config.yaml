@@ -141,7 +141,7 @@ whoop:
   api_url: "https://api.prod.whoop.com/developer/v1"
   oauth_url: "https://api.prod.whoop.com/oauth/oauth2/auth"
   token_url: "https://api.prod.whoop.com/oauth/oauth2/token"
-  redirect_uri: "https://fuyoh666.github.io/RAS-TGbot/whoop-callback.html"
+  redirect_uri: "https://scanovich.ai/whoop-callback.html"
   scopes:
     - "read:recovery"
     - "read:sleep"

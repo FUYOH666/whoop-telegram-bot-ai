@@ -136,16 +136,39 @@ class WhoopClient:
             response.raise_for_status()
             token_data = response.json()
 
+            # Логируем полный ответ для отладки
+            logger.info(
+                "Token exchange response received",
+                extra={
+                    "response_keys": list(token_data.keys()),
+                    "response_preview": {k: str(v)[:50] + "..." if isinstance(v, str) and len(v) > 50 else v for k, v in token_data.items()},
+                },
+            )
+
             access_token = token_data.get("access_token")
-            refresh_token = token_data.get("refresh_token")
+            refresh_token = token_data.get("refresh_token")  # Может отсутствовать в некоторых случаях
             expires_in = token_data.get("expires_in", 3600)
 
-            if not access_token or not refresh_token:
+            if not access_token:
                 logger.error(
-                    "Invalid token response structure",
+                    "Invalid token response structure - no access_token",
+                    extra={
+                        "response_keys": list(token_data.keys()),
+                        "full_response": token_data,
+                    },
+                )
+                raise ValueError(f"Invalid token response from WHOOP. Response keys: {list(token_data.keys())}")
+
+            # Если refresh_token отсутствует, используем access_token как refresh_token
+            # (для некоторых OAuth реализаций refresh_token может быть опциональным)
+            if not refresh_token:
+                logger.warning(
+                    "No refresh_token in response, using access_token as refresh_token",
                     extra={"response_keys": list(token_data.keys())},
                 )
-                raise ValueError("Invalid token response from WHOOP")
+                # Для WHOOP API v2 refresh_token может отсутствовать
+                # В этом случае нужно будет переавторизоваться при истечении токена
+                refresh_token = access_token  # Временное решение
 
             # Сохраняем токены в БД
             self.storage.save_whoop_tokens(user_id, access_token, refresh_token, expires_in)
@@ -193,7 +216,7 @@ class WhoopClient:
             Новый access_token
 
         Raises:
-            ValueError: Если обновление не удалось
+            ValueError: Если обновление не удалось (требуется переавторизация)
         """
         if not self.config.is_configured:
             raise ValueError("WHOOP API not configured")
@@ -203,6 +226,16 @@ class WhoopClient:
             raise ValueError("No tokens found for user")
 
         refresh_token = tokens["refresh_token"]
+
+        # Если refresh_token равен access_token (временное решение), значит refresh не поддерживается
+        if refresh_token == tokens.get("access_token"):
+            logger.warning(
+                "Refresh token not available, re-authorization required",
+                extra={"user_id": user_id},
+            )
+            raise ValueError(
+                "Refresh token not available. Please reconnect WHOOP via /whoop_connect"
+            )
 
         try:
             data = {
@@ -225,10 +258,21 @@ class WhoopClient:
             expires_in = token_data.get("expires_in", 3600)
 
             if not access_token:
+                logger.error(
+                    "Invalid refresh response structure",
+                    extra={"response_keys": list(token_data.keys())},
+                )
                 raise ValueError("Invalid token response from WHOOP")
 
             # Обновляем токены в БД
+            # Если в ответе есть новый refresh_token, используем его, иначе оставляем старый
+            new_refresh_token = token_data.get("refresh_token", refresh_token)
             self.storage.update_whoop_tokens(user_id, access_token, expires_in)
+            
+            # Если получен новый refresh_token, обновляем его тоже
+            if new_refresh_token != refresh_token:
+                # Обновляем refresh_token в БД
+                self.storage.save_whoop_tokens(user_id, access_token, new_refresh_token, expires_in)
 
             logger.info("WHOOP access token refreshed", extra={"user_id": user_id})
 
@@ -237,8 +281,13 @@ class WhoopClient:
         except httpx.HTTPStatusError as e:
             logger.error(
                 "Failed to refresh token",
-                extra={"status_code": e.response.status_code, "error": e.response.text},
+                extra={"status_code": e.response.status_code, "error": e.response.text[:500]},
             )
+            # Если refresh не работает, нужно переавторизоваться
+            if e.response.status_code in [400, 401]:
+                raise ValueError(
+                    "Token refresh failed. Please reconnect WHOOP via /whoop_connect"
+                ) from e
             raise ValueError(f"Failed to refresh token: {e.response.status_code}") from e
         except Exception as e:
             logger.error("Unexpected error refreshing token", extra={"error": str(e)})
