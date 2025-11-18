@@ -50,6 +50,40 @@ class Storage:
                     ON slot_responses(date)
                     """
                 )
+                # Таблица для хранения WHOOP токенов
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS whoop_tokens (
+                        user_id INTEGER PRIMARY KEY,
+                        access_token TEXT NOT NULL,
+                        refresh_token TEXT NOT NULL,
+                        expires_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                    """
+                )
+                # Таблица для хранения данных WHOOP
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS whoop_data (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        date TEXT NOT NULL,
+                        recovery_score REAL,
+                        sleep_duration REAL,
+                        strain_score REAL,
+                        workouts_count INTEGER,
+                        raw_data TEXT,
+                        updated_at TEXT NOT NULL,
+                        UNIQUE(date)
+                    )
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_whoop_data_date 
+                    ON whoop_data(date)
+                    """
+                )
                 conn.commit()
                 logger.info("Database initialized successfully", extra={"db_path": str(self.db_path)})
         except sqlite3.Error as e:
@@ -315,4 +349,219 @@ class Storage:
 
         s6_choice = responses["S6"].lower()
         return "эталон" in s6_choice or "ideal" in s6_choice
+
+    def save_whoop_tokens(
+        self, user_id: int, access_token: str, refresh_token: str, expires_in: int
+    ) -> None:
+        """
+        Сохранение WHOOP токенов для пользователя.
+
+        Args:
+            user_id: ID пользователя Telegram
+            access_token: Access token от WHOOP
+            refresh_token: Refresh token от WHOOP
+            expires_in: Время жизни токена в секундах
+        """
+        expires_at = datetime.fromtimestamp(datetime.now().timestamp() + expires_in).isoformat()
+        updated_at = datetime.now().isoformat()
+
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT OR REPLACE INTO whoop_tokens 
+                    (user_id, access_token, refresh_token, expires_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (user_id, access_token, refresh_token, expires_at, updated_at),
+                )
+                conn.commit()
+                logger.info("WHOOP tokens saved", extra={"user_id": user_id})
+        except sqlite3.Error as e:
+            logger.error("Failed to save WHOOP tokens", extra={"error": str(e), "user_id": user_id})
+            raise
+
+    def get_whoop_tokens(self, user_id: int) -> dict | None:
+        """
+        Получение WHOOP токенов для пользователя.
+
+        Args:
+            user_id: ID пользователя Telegram
+
+        Returns:
+            Словарь с токенами или None если токены не найдены:
+            {
+                "access_token": str,
+                "refresh_token": str,
+                "expires_at": str (ISO format),
+                "updated_at": str (ISO format)
+            }
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT access_token, refresh_token, expires_at, updated_at
+                    FROM whoop_tokens
+                    WHERE user_id = ?
+                    """,
+                    (user_id,),
+                )
+                row = cursor.fetchone()
+                if row:
+                    return {
+                        "access_token": row["access_token"],
+                        "refresh_token": row["refresh_token"],
+                        "expires_at": row["expires_at"],
+                        "updated_at": row["updated_at"],
+                    }
+                return None
+        except sqlite3.Error as e:
+            logger.error("Failed to get WHOOP tokens", extra={"error": str(e), "user_id": user_id})
+            return None
+
+    def update_whoop_tokens(
+        self, user_id: int, access_token: str, expires_in: int
+    ) -> None:
+        """
+        Обновление access_token для пользователя (при refresh).
+
+        Args:
+            user_id: ID пользователя Telegram
+            access_token: Новый access token
+            expires_in: Время жизни токена в секундах
+        """
+        expires_at = datetime.fromtimestamp(datetime.now().timestamp() + expires_in).isoformat()
+        updated_at = datetime.now().isoformat()
+
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    UPDATE whoop_tokens
+                    SET access_token = ?, expires_at = ?, updated_at = ?
+                    WHERE user_id = ?
+                    """,
+                    (access_token, expires_at, updated_at, user_id),
+                )
+                conn.commit()
+                logger.info("WHOOP tokens updated", extra={"user_id": user_id})
+        except sqlite3.Error as e:
+            logger.error("Failed to update WHOOP tokens", extra={"error": str(e), "user_id": user_id})
+            raise
+
+    def save_whoop_data(
+        self,
+        target_date: str,
+        recovery_score: float | None = None,
+        sleep_duration: float | None = None,
+        strain_score: float | None = None,
+        workouts_count: int | None = None,
+        raw_data: dict | None = None,
+    ) -> None:
+        """
+        Сохранение данных WHOOP за указанную дату.
+
+        Args:
+            target_date: Дата в формате YYYY-MM-DD
+            recovery_score: Recovery Score (0-100)
+            sleep_duration: Продолжительность сна в часах
+            strain_score: Strain Score
+            workouts_count: Количество тренировок
+            raw_data: Сырые данные в формате JSON (опционально)
+        """
+        updated_at = datetime.now().isoformat()
+        raw_data_json = None
+        if raw_data:
+            import json
+            raw_data_json = json.dumps(raw_data)
+
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT OR REPLACE INTO whoop_data 
+                    (date, recovery_score, sleep_duration, strain_score, workouts_count, raw_data, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        target_date,
+                        recovery_score,
+                        sleep_duration,
+                        strain_score,
+                        workouts_count,
+                        raw_data_json,
+                        updated_at,
+                    ),
+                )
+                conn.commit()
+                logger.info("WHOOP data saved", extra={"date": target_date})
+        except sqlite3.Error as e:
+            logger.error("Failed to save WHOOP data", extra={"error": str(e), "date": target_date})
+            raise
+
+    def get_today_whoop_data(self) -> dict | None:
+        """
+        Получение данных WHOOP за сегодня.
+
+        Returns:
+            Словарь с данными или None если данных нет:
+            {
+                "recovery_score": float | None,
+                "sleep_duration": float | None,
+                "strain_score": float | None,
+                "workouts_count": int | None,
+                "raw_data": dict | None
+            }
+        """
+        today = date.today().isoformat()
+        return self.get_whoop_data(today)
+
+    def get_whoop_data(self, target_date: str) -> dict | None:
+        """
+        Получение данных WHOOP за указанную дату.
+
+        Args:
+            target_date: Дата в формате YYYY-MM-DD
+
+        Returns:
+            Словарь с данными или None если данных нет
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT recovery_score, sleep_duration, strain_score, workouts_count, raw_data
+                    FROM whoop_data
+                    WHERE date = ?
+                    """,
+                    (target_date,),
+                )
+                row = cursor.fetchone()
+                if row:
+                    result = {
+                        "recovery_score": row["recovery_score"],
+                        "sleep_duration": row["sleep_duration"],
+                        "strain_score": row["strain_score"],
+                        "workouts_count": row["workouts_count"],
+                        "raw_data": None,
+                    }
+                    if row["raw_data"]:
+                        import json
+                        try:
+                            result["raw_data"] = json.loads(row["raw_data"])
+                        except json.JSONDecodeError:
+                            pass
+                    return result
+                return None
+        except sqlite3.Error as e:
+            logger.error("Failed to get WHOOP data", extra={"error": str(e), "date": target_date})
+            return None
 

@@ -12,14 +12,16 @@ logger = logging.getLogger(__name__)
 class StatsCalculator:
     """Калькулятор статистики."""
 
-    def __init__(self, storage: Any):
+    def __init__(self, storage: Any, whoop_client: Any = None):
         """
         Инициализация калькулятора.
 
         Args:
             storage: Экземпляр Storage для доступа к данным
+            whoop_client: Экземпляр WhoopClient (опционально)
         """
         self.storage = storage
+        self.whoop_client = whoop_client
 
     def calculate_statistics(self, days: int = 7) -> dict[str, Any]:
         """
@@ -142,12 +144,13 @@ class StatsCalculator:
 
         return "\n".join(lines)
 
-    def get_context_for_slot(self, slot_id: str) -> dict[str, Any]:
+    def get_context_for_slot(self, slot_id: str, user_id: int | None = None) -> dict[str, Any]:
         """
         Получение контекста для генерации сообщения слота.
 
         Args:
             slot_id: Идентификатор слота (S1-S6)
+            user_id: ID пользователя Telegram (нужен для получения WHOOP данных)
 
         Returns:
             Словарь с контекстом для LLM:
@@ -155,6 +158,10 @@ class StatsCalculator:
                 "yesterday_status": bool или None,
                 "last_7_days_count": int,
                 "s1_status": bool (для S6),
+                "whoop_recovery": float | None (для S6),
+                "whoop_sleep": float | None (для S6),
+                "whoop_strain": float | None (для S6),
+                "whoop_workouts": int (для S6),
                 ...
             }
         """
@@ -185,6 +192,33 @@ class StatsCalculator:
                     )
                 else:
                     context[f"s{i}_status"] = False
+
+            # Получаем данные WHOOP за сегодня (если доступны)
+            if self.whoop_client and user_id:
+                try:
+                    whoop_data = self.storage.get_today_whoop_data()
+                    if whoop_data:
+                        context["whoop_recovery"] = whoop_data.get("recovery_score")
+                        context["whoop_sleep"] = whoop_data.get("sleep_duration")
+                        context["whoop_strain"] = whoop_data.get("strain_score")
+                        context["whoop_workouts"] = whoop_data.get("workouts_count", 0)
+                    else:
+                        # Данных нет в БД, но может быть доступен API
+                        context["whoop_recovery"] = None
+                        context["whoop_sleep"] = None
+                        context["whoop_strain"] = None
+                        context["whoop_workouts"] = 0
+                except Exception as e:
+                    logger.warning("Failed to get WHOOP data for context", extra={"error": str(e)})
+                    context["whoop_recovery"] = None
+                    context["whoop_sleep"] = None
+                    context["whoop_strain"] = None
+                    context["whoop_workouts"] = 0
+            else:
+                context["whoop_recovery"] = None
+                context["whoop_sleep"] = None
+                context["whoop_strain"] = None
+                context["whoop_workouts"] = 0
         else:
             # Для остальных слотов нужен статус вчерашнего дня
             if slot_id in yesterday_responses:

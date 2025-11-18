@@ -102,13 +102,35 @@ class LLMClient:
         last_7_days_count = context.get("last_7_days_count", 0)
         prompt = prompt.replace("{{last_7_days_count}}", str(last_7_days_count))
 
-        # Для S6 заменяем статусы всех слотов
+        # Для S6 заменяем статусы всех слотов и WHOOP данные
         if slot_config.slot_id == "S6":
             for i in range(1, 6):
                 slot_status = context.get(f"s{i}_status", "неизвестно")
                 if isinstance(slot_status, bool):
                     slot_status = "да" if slot_status else "нет"
                 prompt = prompt.replace(f"{{{{s{i}_status}}}}", slot_status)
+
+            # Заменяем WHOOP данные
+            whoop_recovery = context.get("whoop_recovery")
+            if whoop_recovery is not None:
+                prompt = prompt.replace("{{whoop_recovery}}", f"{whoop_recovery:.0f}%")
+            else:
+                prompt = prompt.replace("{{whoop_recovery}}", "недоступно")
+
+            whoop_sleep = context.get("whoop_sleep")
+            if whoop_sleep is not None:
+                prompt = prompt.replace("{{whoop_sleep}}", f"{whoop_sleep:.1f}ч")
+            else:
+                prompt = prompt.replace("{{whoop_sleep}}", "недоступно")
+
+            whoop_strain = context.get("whoop_strain")
+            if whoop_strain is not None:
+                prompt = prompt.replace("{{whoop_strain}}", f"{whoop_strain:.1f}")
+            else:
+                prompt = prompt.replace("{{whoop_strain}}", "недоступно")
+
+            whoop_workouts = context.get("whoop_workouts", 0)
+            prompt = prompt.replace("{{whoop_workouts}}", str(whoop_workouts))
 
         return prompt
 

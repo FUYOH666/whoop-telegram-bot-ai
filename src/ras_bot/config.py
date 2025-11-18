@@ -54,6 +54,45 @@ class LoggingConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="LOG_", case_sensitive=False)
 
 
+class WhoopConfig:
+    """Конфигурация WHOOP API."""
+
+    def __init__(self, config: dict[str, Any]):
+        """
+        Инициализация конфигурации WHOOP.
+
+        Args:
+            config: Словарь с конфигурацией из YAML
+        """
+        self.api_url = config.get("api_url", "https://api.prod.whoop.com/developer/v1")
+        self.oauth_url = config.get("oauth_url", "https://api.prod.whoop.com/oauth/oauth2/auth")
+        self.token_url = config.get("token_url", "https://api.prod.whoop.com/oauth/oauth2/token")
+        self.redirect_uri = config.get("redirect_uri", "https://t.me/RAS_AI_bot?start=whoop_auth")
+        self.scopes = config.get("scopes", ["read:recovery", "read:sleep", "read:workout", "read:profile"])
+
+        # Загружаем client_id и client_secret из переменных окружения (опционально)
+        from pydantic_settings import BaseSettings
+
+        class WhoopCredentials(BaseSettings):
+            client_id: str | None = Field(default=None, alias="WHOOP_CLIENT_ID")
+            client_secret: str | None = Field(default=None, alias="WHOOP_CLIENT_SECRET")
+            model_config = SettingsConfigDict(case_sensitive=False)
+
+        try:
+            credentials = WhoopCredentials()
+            self.client_id = credentials.client_id
+            self.client_secret = credentials.client_secret
+        except Exception:
+            # Если переменные окружения не заданы, это нормально (WHOOP опционален)
+            self.client_id = None
+            self.client_secret = None
+
+    @property
+    def is_configured(self) -> bool:
+        """Проверка, настроена ли конфигурация WHOOP."""
+        return self.client_id is not None and self.client_secret is not None
+
+
 class SlotConfig:
     """Конфигурация одного слота."""
 
@@ -121,6 +160,12 @@ class Config:
                 "Missing required environment variables. "
                 "Please check TELEGRAM_BOT_TOKEN and OPENROUTER_API_KEY in .env file"
             ) from e
+
+        # Загружаем конфигурацию WHOOP (опционально)
+        whoop_yaml = yaml_config.get("whoop", {})
+        self.whoop = WhoopConfig(whoop_yaml)
+        if not self.whoop.is_configured:
+            logger.info("WHOOP API not configured (client_id/client_secret not set). WHOOP features will be disabled.")
 
         # Загружаем Telegram Bot Token из env
         from pydantic_settings import BaseSettings

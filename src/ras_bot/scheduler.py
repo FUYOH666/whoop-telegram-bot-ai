@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from datetime import datetime, time
+from datetime import date, datetime, time
 from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -34,6 +34,10 @@ class SlotScheduler:
 
         for slot_id, slot_config in slots_config.items():
             self._schedule_slot(slot_id, slot_config.time)
+
+        # Планируем обновление WHOOP данных в 22:00 (после S6)
+        if self.config.whoop.is_configured:
+            self._schedule_whoop_update()
 
         logger.info("Scheduler setup completed", extra={"slots_count": len(slots_config)})
 
@@ -156,4 +160,74 @@ class SlotScheduler:
                     next_runs[slot_id] = "Не запланировано"
 
         return next_runs
+
+    def _schedule_whoop_update(self) -> None:
+        """Планирование задачи обновления WHOOP данных."""
+        try:
+            # Планируем на 22:00 каждый день
+            trigger = CronTrigger(hour=22, minute=0)
+
+            self.scheduler.add_job(
+                self._update_whoop_data_job,
+                trigger=trigger,
+                id="whoop_update",
+                name="Update WHOOP data",
+                replace_existing=True,
+                max_instances=1,
+            )
+
+            logger.info("WHOOP update job scheduled", extra={"time": "22:00"})
+
+        except Exception as e:
+            logger.error("Failed to schedule WHOOP update", extra={"error": str(e)})
+
+    async def _update_whoop_data_job(self) -> None:
+        """
+        Задача для обновления WHOOP данных за сегодня.
+
+        Выполняется в 22:00 для получения полных данных за день.
+        """
+        if self.user_id is None:
+            logger.warning("Cannot update WHOOP data: user_id not set")
+            return
+
+        if not self.bot or not self.bot.whoop_client:
+            logger.debug("WHOOP client not available, skipping update")
+            return
+
+        try:
+            whoop_client = self.bot.whoop_client
+            storage = self.bot.storage
+
+            # Получаем все данные WHOOP за сегодня
+            today = date.today()
+            whoop_data = await whoop_client.get_all_data(self.user_id, today)
+
+            # Сохраняем в БД
+            storage.save_whoop_data(
+                target_date=today.isoformat(),
+                recovery_score=whoop_data.get("recovery_score"),
+                sleep_duration=whoop_data.get("sleep_duration"),
+                strain_score=whoop_data.get("strain_score"),
+                workouts_count=whoop_data.get("workouts_count", 0),
+                raw_data=whoop_data.get("raw_data"),
+            )
+
+            logger.info(
+                "WHOOP data updated successfully",
+                extra={
+                    "date": today.isoformat(),
+                    "recovery": whoop_data.get("recovery_score"),
+                    "sleep": whoop_data.get("sleep_duration"),
+                    "strain": whoop_data.get("strain_score"),
+                    "workouts": whoop_data.get("workouts_count", 0),
+                },
+            )
+
+        except Exception as e:
+            logger.error(
+                "Failed to update WHOOP data",
+                extra={"error": str(e), "user_id": self.user_id},
+            )
+            # Не блокируем работу бота при ошибке WHOOP
 

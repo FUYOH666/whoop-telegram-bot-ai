@@ -13,6 +13,7 @@ from ras_bot.llm_client import LLMClient
 from ras_bot.scheduler import SlotScheduler
 from ras_bot.stats import StatsCalculator
 from ras_bot.storage import Storage
+from ras_bot.whoop_client import WhoopClient
 
 
 def setup_logging(config: Config) -> None:
@@ -112,8 +113,16 @@ async def main() -> None:
         # LLM клиент
         llm_client = LLMClient(config)
 
+        # WHOOP клиент (опционально, если настроен)
+        whoop_client = None
+        if config.whoop.is_configured:
+            whoop_client = WhoopClient(config.whoop, storage)
+            logger.info("WHOOP client initialized")
+        else:
+            logger.info("WHOOP client not initialized (not configured)")
+
         # Калькулятор статистики
-        stats_calculator = StatsCalculator(storage)
+        stats_calculator = StatsCalculator(storage, whoop_client)
 
         # Планировщик
         # Получаем user_id из переменной окружения или используем None
@@ -133,7 +142,7 @@ async def main() -> None:
         scheduler.setup_scheduler()
 
         # Telegram бот (передаем scheduler для установки user_id)
-        bot = RASBot(config, storage, llm_client, stats_calculator, scheduler)
+        bot = RASBot(config, storage, llm_client, stats_calculator, scheduler, whoop_client)
         
         # Устанавливаем бот в планировщик
         scheduler.bot = bot
@@ -178,6 +187,10 @@ async def main() -> None:
 
         # Закрываем LLM клиент
         await llm_client.close()
+
+        # Закрываем WHOOP клиент
+        if whoop_client:
+            await whoop_client.close()
 
         logger.info("Shutdown complete")
 
