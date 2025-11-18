@@ -28,3 +28,11 @@ Thumbs.db
 uv.lock.bak
 *.log
 
+# Test databases
+test_*.db
+
+# Debug and test scripts (temporary)
+debug_*.py
+check_*.py
+test_*_endpoint.py
+test_*_integration.py

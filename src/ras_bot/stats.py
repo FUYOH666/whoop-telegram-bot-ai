@@ -144,7 +144,7 @@ class StatsCalculator:
 
         return "\n".join(lines)
 
-    def get_context_for_slot(self, slot_id: str, user_id: int | None = None) -> dict[str, Any]:
+    async def get_context_for_slot(self, slot_id: str, user_id: int | None = None) -> dict[str, Any]:
         """
         Получение контекста для генерации сообщения слота.
 
@@ -158,10 +158,13 @@ class StatsCalculator:
                 "yesterday_status": bool или None,
                 "last_7_days_count": int,
                 "s1_status": bool (для S6),
-                "whoop_recovery": float | None (для S6),
-                "whoop_sleep": float | None (для S6),
-                "whoop_strain": float | None (для S6),
-                "whoop_workouts": int (для S6),
+                "whoop_recovery": float | None,
+                "whoop_sleep": float | None,
+                "whoop_strain": float | None,
+                "whoop_workouts": int,
+                "whoop_recovery_yesterday": float | None (для S1),
+                "whoop_sleep_yesterday": float | None (для S2),
+                "whoop_strain_today": float | None (для S3-S5),
                 ...
             }
         """
@@ -196,20 +199,32 @@ class StatsCalculator:
             # Получаем данные WHOOP за сегодня (если доступны)
             if self.whoop_client and user_id:
                 try:
+                    # Сначала пробуем получить из БД
                     whoop_data = self.storage.get_today_whoop_data()
+                    if not whoop_data:
+                        # Если данных нет в БД, получаем через API
+                        today = date.today()
+                        whoop_data_dict = await self.whoop_client.get_all_data(user_id, today)
+                        if whoop_data_dict:
+                            whoop_data = {
+                                "recovery_score": whoop_data_dict.get("recovery_score"),
+                                "sleep_duration": whoop_data_dict.get("sleep_duration"),
+                                "strain_score": whoop_data_dict.get("strain_score"),
+                                "workouts_count": whoop_data_dict.get("workouts_count", 0),
+                            }
+                    
                     if whoop_data:
                         context["whoop_recovery"] = whoop_data.get("recovery_score")
                         context["whoop_sleep"] = whoop_data.get("sleep_duration")
                         context["whoop_strain"] = whoop_data.get("strain_score")
                         context["whoop_workouts"] = whoop_data.get("workouts_count", 0)
                     else:
-                        # Данных нет в БД, но может быть доступен API
                         context["whoop_recovery"] = None
                         context["whoop_sleep"] = None
                         context["whoop_strain"] = None
                         context["whoop_workouts"] = 0
                 except Exception as e:
-                    logger.warning("Failed to get WHOOP data for context", extra={"error": str(e)})
+                    logger.warning("Failed to get WHOOP data for S6 context", extra={"error": str(e)})
                     context["whoop_recovery"] = None
                     context["whoop_sleep"] = None
                     context["whoop_strain"] = None
@@ -240,6 +255,79 @@ class StatsCalculator:
             # Количество выполнений за последние 7 дней
             stats = self.storage.get_slot_statistics(slot_id, 7)
             context["last_7_days_count"] = stats["successful"]
+
+            # Получаем WHOOP данные для каждого слота
+            if self.whoop_client and user_id:
+                try:
+                    if slot_id == "S1":
+                        # S1: Recovery вчера
+                        yesterday_date = date.today() - timedelta(days=1)
+                        recovery_data = await self.whoop_client.get_recovery(user_id, yesterday_date)
+                        if recovery_data:
+                            score = recovery_data.get("score", {})
+                            # В v2 API это recovery_score, не recovery_percentage
+                            context["whoop_recovery_yesterday"] = score.get("recovery_score") or score.get("recovery_percentage")
+                        else:
+                            context["whoop_recovery_yesterday"] = None
+                    elif slot_id == "S2":
+                        # S2: Sleep вчера
+                        yesterday_date = date.today() - timedelta(days=1)
+                        sleep_data = await self.whoop_client.get_sleep(user_id, yesterday_date)
+                        if sleep_data:
+                            # WHOOP v2 API: sleep данные в score.stage_summary.total_in_bed_time_milli
+                            stage_summary = sleep_data.get("score", {}).get("stage_summary", {})
+                            sleep_duration_ms = stage_summary.get("total_in_bed_time_milli", 0)
+                            context["whoop_sleep_yesterday"] = sleep_duration_ms / (1000 * 60 * 60) if sleep_duration_ms else None
+                        else:
+                            context["whoop_sleep_yesterday"] = None
+                    elif slot_id in ["S3", "S4", "S5"]:
+                        # S3-S5: Strain сегодня (предпочтительно из cycle, fallback на workouts)
+                        today = date.today()
+                        # Сначала пробуем получить Strain из cycle
+                        cycle_data = await self.whoop_client.get_cycle(user_id, today)
+                        if cycle_data:
+                            strain = cycle_data.get("score", {}).get("strain")
+                            if strain is not None:
+                                context["whoop_strain_today"] = strain
+                            else:
+                                # Fallback на workouts
+                                workouts = await self.whoop_client.get_workouts(user_id, today)
+                                if workouts:
+                                    total_strain = sum(
+                                        workout.get("score", {}).get("strain", 0)
+                                        for workout in workouts
+                                    )
+                                    context["whoop_strain_today"] = total_strain if total_strain > 0 else None
+                                else:
+                                    context["whoop_strain_today"] = None
+                        else:
+                            # Если cycle недоступен, используем workouts
+                            workouts = await self.whoop_client.get_workouts(user_id, today)
+                            if workouts:
+                                total_strain = sum(
+                                    workout.get("score", {}).get("strain", 0)
+                                    for workout in workouts
+                                )
+                                context["whoop_strain_today"] = total_strain if total_strain > 0 else None
+                            else:
+                                context["whoop_strain_today"] = None
+                except Exception as e:
+                    logger.warning(f"Failed to get WHOOP data for {slot_id} context", extra={"error": str(e)})
+                    # Устанавливаем None для всех WHOOP полей этого слота
+                    if slot_id == "S1":
+                        context["whoop_recovery_yesterday"] = None
+                    elif slot_id == "S2":
+                        context["whoop_sleep_yesterday"] = None
+                    elif slot_id in ["S3", "S4", "S5"]:
+                        context["whoop_strain_today"] = None
+            else:
+                # WHOOP не настроен или user_id не указан
+                if slot_id == "S1":
+                    context["whoop_recovery_yesterday"] = None
+                elif slot_id == "S2":
+                    context["whoop_sleep_yesterday"] = None
+                elif slot_id in ["S3", "S4", "S5"]:
+                    context["whoop_strain_today"] = None
 
         return context
 

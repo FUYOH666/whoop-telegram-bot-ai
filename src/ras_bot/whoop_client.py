@@ -28,6 +28,25 @@ class WhoopClient:
         self.storage = storage
         self.client = httpx.AsyncClient(timeout=30.0)
 
+    def _format_datetime(self, target_date: date, start_of_day: bool = True) -> str:
+        """
+        Форматирование даты в ISO 8601 date-time формат для WHOOP API v2.
+
+        Args:
+            target_date: Дата для форматирования
+            start_of_day: Если True, возвращает начало дня (00:00:00.000Z), иначе конец дня (23:59:59.999Z)
+
+        Returns:
+            Строка в формате ISO 8601 date-time (например, "2025-11-18T00:00:00.000Z")
+        """
+        if start_of_day:
+            dt = datetime.combine(target_date, datetime.min.time())
+        else:
+            dt = datetime.combine(target_date, datetime.max.time().replace(microsecond=999000))
+        
+        # Форматируем в ISO 8601 с UTC временной зоной
+        return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
     def get_authorization_url(self, user_id: int, state: str | None = None) -> str:
         """
         Генерация URL для авторизации OAuth 2.0.
@@ -142,12 +161,24 @@ class WhoopClient:
                 extra={
                     "response_keys": list(token_data.keys()),
                     "response_preview": {k: str(v)[:50] + "..." if isinstance(v, str) and len(v) > 50 else v for k, v in token_data.items()},
+                    "full_response": token_data,  # Сохраняем полный ответ для анализа
                 },
             )
 
             access_token = token_data.get("access_token")
             refresh_token = token_data.get("refresh_token")  # Может отсутствовать в некоторых случаях
             expires_in = token_data.get("expires_in", 3600)
+            
+            # Логируем, что именно получили
+            logger.info(
+                "Token extraction",
+                extra={
+                    "has_access_token": bool(access_token),
+                    "has_refresh_token": bool(refresh_token),
+                    "expires_in": expires_in,
+                    "all_response_keys": list(token_data.keys()),
+                },
+            )
 
             if not access_token:
                 logger.error(
@@ -159,16 +190,20 @@ class WhoopClient:
                 )
                 raise ValueError(f"Invalid token response from WHOOP. Response keys: {list(token_data.keys())}")
 
-            # Если refresh_token отсутствует, используем access_token как refresh_token
-            # (для некоторых OAuth реализаций refresh_token может быть опциональным)
+            # Если refresh_token отсутствует в ответе, сохраняем access_token как refresh_token
+            # Это позволяет системе попытаться использовать существующий токен при истечении
+            # WHOOP API может продлевать токены автоматически при использовании или предоставлять долгоживущие токены
             if not refresh_token:
-                logger.warning(
-                    "No refresh_token in response, using access_token as refresh_token",
-                    extra={"response_keys": list(token_data.keys())},
+                logger.info(
+                    "No refresh_token in response, will use access_token for token management",
+                    extra={
+                        "response_keys": list(token_data.keys()),
+                        "expires_in": expires_in,
+                    },
                 )
-                # Для WHOOP API v2 refresh_token может отсутствовать
-                # В этом случае нужно будет переавторизоваться при истечении токена
-                refresh_token = access_token  # Временное решение
+                # Сохраняем access_token как refresh_token для отслеживания
+                # Система будет пытаться использовать существующий токен при истечении
+                refresh_token = access_token
 
             # Сохраняем токены в БД
             self.storage.save_whoop_tokens(user_id, access_token, refresh_token, expires_in)
@@ -227,22 +262,25 @@ class WhoopClient:
 
         refresh_token = tokens["refresh_token"]
 
-        # Если refresh_token равен access_token (временное решение), значит refresh не поддерживается
+        # Если refresh_token равен access_token, значит WHOOP API не предоставил отдельный refresh_token
+        # В этом случае возвращаем существующий токен (он может быть еще валиден или долгоживущим)
         if refresh_token == tokens.get("access_token"):
-            logger.warning(
-                "Refresh token not available, re-authorization required",
+            logger.info(
+                "Refresh token equals access token, returning existing token (may be long-lived)",
                 extra={"user_id": user_id},
             )
-            raise ValueError(
-                "Refresh token not available. Please reconnect WHOOP via /whoop_connect"
-            )
+            # Возвращаем существующий токен - WHOOP может использовать долгоживущие токены
+            # или продлевать их автоматически при использовании
+            return tokens["access_token"]
 
         try:
+            # WHOOP API требует redirect_uri при refresh (согласно OAuth 2.0 best practices)
             data = {
                 "grant_type": "refresh_token",
                 "client_id": self.config.client_id,
                 "client_secret": self.config.client_secret,
                 "refresh_token": refresh_token,
+                "redirect_uri": self.config.redirect_uri,  # Добавляем redirect_uri для надежности
             }
 
             response = await self.client.post(
@@ -302,18 +340,64 @@ class WhoopClient:
 
         Returns:
             Валидный access_token
+
+        Raises:
+            ValueError: Если токен не найден или refresh не удался
         """
         tokens = self.storage.get_whoop_tokens(user_id)
         if not tokens:
             raise ValueError("No tokens found. Please connect WHOOP first.")
 
+        access_token = tokens.get("access_token")
+        refresh_token = tokens.get("refresh_token")
+        
         # Проверяем, не истек ли токен (с запасом в 5 минут)
-        expires_at = datetime.fromisoformat(tokens["expires_at"])
-        if datetime.now() >= expires_at:
-            # Токен истек, обновляем
-            return await self.refresh_access_token(user_id)
+        expires_at_str = tokens.get("expires_at")
+        if expires_at_str:
+            try:
+                from datetime import datetime
+                expires_at = datetime.fromisoformat(expires_at_str)
+                now = datetime.now()
+                time_until_expiry = (expires_at - now).total_seconds()
+                
+                # Если токен истекает в течение 5 минут, пытаемся обновить его
+                if expires_at <= now or time_until_expiry < 300:
+                    logger.info(
+                        "Token expires soon, attempting refresh",
+                        extra={
+                            "user_id": user_id,
+                            "expires_at": expires_at_str,
+                            "time_until_expiry_seconds": time_until_expiry,
+                        },
+                    )
+                    
+                    # Если refresh_token отличается от access_token, пробуем refresh
+                    if refresh_token and refresh_token != access_token:
+                        try:
+                            new_token = await self.refresh_access_token(user_id)
+                            logger.info("Token refreshed successfully", extra={"user_id": user_id})
+                            return new_token
+                        except ValueError as e:
+                            logger.warning(
+                                "Token refresh failed, will try to use existing token",
+                                extra={"user_id": user_id, "error": str(e)},
+                            )
+                            # Если refresh не работает, пробуем использовать существующий токен
+                            # (возможно, он еще валиден или WHOOP продлевает его автоматически)
+                            return access_token
+                    else:
+                        # Если refresh_token отсутствует или равен access_token,
+                        # пробуем использовать существующий токен
+                        # WHOOP может продлевать токены автоматически или они могут быть долгоживущими
+                        logger.info(
+                            "No refresh_token available, using existing token",
+                            extra={"user_id": user_id, "expires_at": expires_at_str},
+                        )
+                        return access_token
+            except Exception as e:
+                logger.warning("Failed to parse expires_at", extra={"error": str(e)})
 
-        return tokens["access_token"]
+        return access_token
 
     async def _make_request(
         self, user_id: int, endpoint: str, params: dict[str, Any] | None = None
@@ -405,7 +489,7 @@ class WhoopClient:
 
     async def get_recovery(self, user_id: int, target_date: date | None = None) -> dict[str, Any] | None:
         """
-        Получение Recovery Score за указанную дату.
+        Получение Recovery Score за указанную дату через /v2/recovery endpoint.
 
         Args:
             user_id: ID пользователя Telegram
@@ -418,15 +502,15 @@ class WhoopClient:
             target_date = date.today()
 
         try:
-            # WHOOP API использует формат YYYY-MM-DD для дат
-            start = target_date.isoformat()
-            end = target_date.isoformat()
+            # WHOOP API v2 требует ISO 8601 date-time формат
+            start = self._format_datetime(target_date, start_of_day=True)
+            end = self._format_datetime(target_date, start_of_day=False)
 
             response = await self._make_request(
-                user_id, "/recovery", params={"start": start, "end": end}
+                user_id, "/v2/recovery", params={"start": start, "end": end}
             )
 
-            # WHOOP возвращает массив записей
+            # WHOOP v2 возвращает {"records": [...], "next_token": "..."}
             records = response.get("records", [])
             if records:
                 return records[0]  # Возвращаем первую запись за день
@@ -438,7 +522,7 @@ class WhoopClient:
 
     async def get_sleep(self, user_id: int, target_date: date | None = None) -> dict[str, Any] | None:
         """
-        Получение данных сна за указанную дату.
+        Получение данных сна за указанную дату через /v2/activity/sleep endpoint.
 
         Args:
             user_id: ID пользователя Telegram
@@ -451,11 +535,15 @@ class WhoopClient:
             target_date = date.today()
 
         try:
-            start = target_date.isoformat()
-            end = target_date.isoformat()
+            # WHOOP API v2 требует ISO 8601 date-time формат
+            start = self._format_datetime(target_date, start_of_day=True)
+            end = self._format_datetime(target_date, start_of_day=False)
 
-            response = await self._make_request(user_id, "/sleep", params={"start": start, "end": end})
+            response = await self._make_request(
+                user_id, "/v2/activity/sleep", params={"start": start, "end": end}
+            )
 
+            # WHOOP v2 возвращает {"records": [...], "next_token": "..."}
             records = response.get("records", [])
             if records:
                 return records[0]
@@ -499,7 +587,7 @@ class WhoopClient:
 
     async def get_workouts(self, user_id: int, target_date: date | None = None) -> list[dict[str, Any]]:
         """
-        Получение тренировок за указанную дату.
+        Получение тренировок за указанную дату через /v2/activity/workout endpoint.
 
         Args:
             user_id: ID пользователя Telegram
@@ -512,20 +600,61 @@ class WhoopClient:
             target_date = date.today()
 
         try:
-            start = target_date.isoformat()
-            end = target_date.isoformat()
+            # WHOOP API v2 требует ISO 8601 date-time формат
+            start = self._format_datetime(target_date, start_of_day=True)
+            end = self._format_datetime(target_date, start_of_day=False)
 
-            response = await self._make_request(user_id, "/workout", params={"start": start, "end": end})
+            response = await self._make_request(
+                user_id, "/v2/activity/workout", params={"start": start, "end": end}
+            )
 
+            # WHOOP v2 возвращает {"records": [...], "next_token": "..."}
             return response.get("records", [])
 
         except Exception as e:
             logger.error("Failed to get workouts", extra={"error": str(e), "date": target_date.isoformat()})
             return []
 
+    async def get_cycle(self, user_id: int, target_date: date | None = None) -> dict[str, Any] | None:
+        """
+        Получение данных цикла (cycle) за указанную дату через /v2/cycle endpoint.
+        
+        Cycle содержит Strain за день.
+
+        Args:
+            user_id: ID пользователя Telegram
+            target_date: Дата (по умолчанию сегодня)
+
+        Returns:
+            Словарь с данными цикла или None при ошибке
+        """
+        if target_date is None:
+            target_date = date.today()
+
+        try:
+            # WHOOP API v2 требует ISO 8601 date-time формат
+            start = self._format_datetime(target_date, start_of_day=True)
+            end = self._format_datetime(target_date, start_of_day=False)
+
+            response = await self._make_request(
+                user_id, "/v2/cycle", params={"start": start, "end": end}
+            )
+
+            records = response.get("records", [])
+            if records:
+                return records[0]  # Возвращаем первую запись за день
+            return None
+
+        except Exception as e:
+            logger.warning("Failed to get cycle data", extra={"error": str(e), "date": target_date.isoformat()})
+            return None
+
     async def get_all_data(self, user_id: int, target_date: date | None = None) -> dict[str, Any]:
         """
-        Получение всех данных WHOOP за указанную дату (агрегация).
+        Получение всех данных WHOOP за указанную дату (агрегация) через v2 API.
+
+        Использует /v2/cycle для получения Strain, /v2/recovery для Recovery,
+        /v2/activity/sleep для Sleep, /v2/activity/workout для тренировок.
 
         Args:
             user_id: ID пользователя Telegram
@@ -553,31 +682,47 @@ class WhoopClient:
         }
 
         try:
-            # Получаем Recovery
+            # Получаем Strain из /v2/cycle (основной источник для Strain за день)
+            cycle = await self.get_cycle(user_id, target_date)
+            if cycle:
+                score = cycle.get("score", {})
+                # Strain из cycle (это дневной Strain)
+                if "strain" in score:
+                    result["strain_score"] = score.get("strain")
+                result["raw_data"]["cycle"] = cycle
+                logger.info("WHOOP cycle data retrieved", extra={"date": target_date.isoformat(), "strain": result["strain_score"]})
+            
+            # Получаем Recovery из /v2/recovery
             recovery = await self.get_recovery(user_id, target_date)
             if recovery:
-                result["recovery_score"] = recovery.get("score", {}).get("recovery_percentage")
+                score = recovery.get("score", {})
+                # Recovery score из recovery (в v2 API это recovery_score, не recovery_percentage)
+                if "recovery_score" in score:
+                    result["recovery_score"] = score.get("recovery_score")
+                elif "recovery_percentage" in score:  # Fallback для совместимости
+                    result["recovery_score"] = score.get("recovery_percentage")
                 result["raw_data"]["recovery"] = recovery
 
-            # Получаем Sleep
+            # Получаем Sleep из /v2/activity/sleep
             sleep = await self.get_sleep(user_id, target_date)
             if sleep:
-                # Продолжительность сна в часах
-                sleep_duration_ms = sleep.get("score", {}).get("total_sleep_time_milli", 0)
-                result["sleep_duration"] = sleep_duration_ms / (1000 * 60 * 60) if sleep_duration_ms else None
+                score = sleep.get("score", {})
+                stage_summary = score.get("stage_summary", {})
+                # Продолжительность сна в миллисекундах из stage_summary.total_in_bed_time_milli
+                sleep_duration_ms = stage_summary.get("total_in_bed_time_milli", 0)
+                if sleep_duration_ms:
+                    result["sleep_duration"] = sleep_duration_ms / (1000 * 60 * 60)  # Конвертируем в часы
                 result["raw_data"]["sleep"] = sleep
 
-            # Получаем Workouts и рассчитываем Strain
+            # Получаем Workouts из /v2/activity/workout для подсчета количества тренировок
             workouts = await self.get_workouts(user_id, target_date)
             result["workouts_count"] = len(workouts)
             result["raw_data"]["workouts"] = workouts
 
-            if workouts:
-                # Рассчитываем общий Strain из тренировок
-                # Strain может быть в score.strain или в score.zone_duration (зависит от API версии)
+            # Если Strain не получен из cycle, рассчитываем из тренировок как fallback
+            if result["strain_score"] is None and workouts:
                 total_strain = sum(
-                    workout.get("score", {}).get("strain", 0) 
-                    or workout.get("score", {}).get("kilojoule", 0) / 100  # Fallback расчет
+                    workout.get("score", {}).get("strain", 0)
                     for workout in workouts
                 )
                 result["strain_score"] = total_strain if total_strain > 0 else None

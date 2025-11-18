@@ -93,16 +93,40 @@ class WhoopConfig:
         return self.client_id is not None and self.client_secret is not None
 
 
+class WhoopMonitoringConfig:
+    """Конфигурация мониторинга WHOOP в реальном времени."""
+
+    def __init__(self, config: dict[str, Any]):
+        """
+        Инициализация конфигурации мониторинга.
+
+        Args:
+            config: Словарь с конфигурацией из YAML
+        """
+        self.enabled = config.get("enabled", True)
+        self.check_interval_minutes = config.get("check_interval_minutes", 30)
+        self.active_hours = config.get("active_hours", {})
+        self.start_time = self.active_hours.get("start", "08:00")
+        self.end_time = self.active_hours.get("end", "00:00")
+        self.stress_threshold = config.get("stress_threshold", 12.0)
+        self.notification_cooldown_hours = config.get("notification_cooldown_hours", 2.0)
+        self.recovery_thresholds = config.get("recovery_thresholds", {})
+        self.recovery_low = self.recovery_thresholds.get("low", 50)
+        self.recovery_high = self.recovery_thresholds.get("high", 70)
+        self.stress_advice_prompt = config.get("stress_advice_prompt", "")
+
+
 class SlotConfig:
     """Конфигурация одного слота."""
 
-    def __init__(self, slot_id: str, config: dict[str, Any]):
+    def __init__(self, slot_id: str, config: dict[str, Any], default_max_tokens: int = 150):
         """
         Инициализация конфигурации слота.
 
         Args:
             slot_id: Идентификатор слота (S1-S6)
             config: Словарь с конфигурацией из YAML
+            default_max_tokens: Значение max_tokens по умолчанию из openrouter конфигурации
         """
         self.slot_id = slot_id
         self.name = config.get("name", "")
@@ -110,6 +134,8 @@ class SlotConfig:
         self.description = config.get("description", "")
         self.user_prompt_template = config.get("user_prompt_template", "")
         self.fallback_message = config.get("fallback_message", "")
+        # Если max_tokens указан для слота, используем его, иначе используем значение по умолчанию
+        self.max_tokens = config.get("max_tokens", default_max_tokens)
 
 
 class IdealDayConfig:
@@ -167,6 +193,10 @@ class Config:
         if not self.whoop.is_configured:
             logger.info("WHOOP API not configured (client_id/client_secret not set). WHOOP features will be disabled.")
 
+        # Загружаем конфигурацию мониторинга WHOOP
+        whoop_monitoring_yaml = yaml_config.get("whoop_monitoring", {})
+        self.whoop_monitoring = WhoopMonitoringConfig(whoop_monitoring_yaml)
+
         # Загружаем Telegram Bot Token из env
         from pydantic_settings import BaseSettings
 
@@ -190,8 +220,9 @@ class Config:
         # Загружаем конфигурацию слотов
         slots_config = yaml_config.get("slots", {})
         self.slots: dict[str, SlotConfig] = {}
+        default_max_tokens = self.openrouter.max_tokens
         for slot_id, slot_data in slots_config.items():
-            self.slots[slot_id] = SlotConfig(slot_id, slot_data)
+            self.slots[slot_id] = SlotConfig(slot_id, slot_data, default_max_tokens)
 
         # Загружаем конфигурацию эталонного дня
         ideal_day_config = yaml_config.get("ideal_day", {})

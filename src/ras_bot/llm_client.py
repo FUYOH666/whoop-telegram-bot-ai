@@ -50,7 +50,7 @@ class LLMClient:
             slot_config = self.config.get_slot_config(slot_id)
             user_prompt = self._build_user_prompt(slot_config, context)
 
-            message = await self._call_openrouter(user_prompt)
+            message = await self._call_openrouter(user_prompt, max_tokens=slot_config.max_tokens)
 
             if message:
                 logger.info(
@@ -102,6 +102,29 @@ class LLMClient:
         last_7_days_count = context.get("last_7_days_count", 0)
         prompt = prompt.replace("{{last_7_days_count}}", str(last_7_days_count))
 
+        # Заменяем WHOOP плейсхолдеры для S1-S5
+        if slot_config.slot_id == "S1":
+            # S1: Recovery вчера
+            whoop_recovery_yesterday = context.get("whoop_recovery_yesterday")
+            if whoop_recovery_yesterday is not None:
+                prompt = prompt.replace("{{whoop_recovery_yesterday}}", f"{whoop_recovery_yesterday:.0f}%")
+            else:
+                prompt = prompt.replace("{{whoop_recovery_yesterday}}", "недоступно")
+        elif slot_config.slot_id == "S2":
+            # S2: Sleep вчера
+            whoop_sleep_yesterday = context.get("whoop_sleep_yesterday")
+            if whoop_sleep_yesterday is not None:
+                prompt = prompt.replace("{{whoop_sleep_yesterday}}", f"{whoop_sleep_yesterday:.1f}ч")
+            else:
+                prompt = prompt.replace("{{whoop_sleep_yesterday}}", "недоступно")
+        elif slot_config.slot_id in ["S3", "S4", "S5"]:
+            # S3-S5: Strain сегодня
+            whoop_strain_today = context.get("whoop_strain_today")
+            if whoop_strain_today is not None:
+                prompt = prompt.replace("{{whoop_strain_today}}", f"{whoop_strain_today:.1f}")
+            else:
+                prompt = prompt.replace("{{whoop_strain_today}}", "недоступно")
+
         # Для S6 заменяем статусы всех слотов и WHOOP данные
         if slot_config.slot_id == "S6":
             for i in range(1, 6):
@@ -134,17 +157,21 @@ class LLMClient:
 
         return prompt
 
-    async def _call_openrouter(self, user_prompt: str, max_retries: int = 3) -> str:
+    async def _call_openrouter(self, user_prompt: str, max_retries: int = 3, max_tokens: int | None = None) -> str:
         """
         Вызов OpenRouter API с retry логикой.
 
         Args:
             user_prompt: User-промпт для отправки
             max_retries: Максимальное количество попыток
+            max_tokens: Максимальное количество токенов (если не указано, используется значение из конфигурации)
 
         Returns:
             Сгенерированное сообщение или пустая строка при ошибке
         """
+        if max_tokens is None:
+            max_tokens = self.openrouter_config.max_tokens
+
         for attempt in range(max_retries):
             try:
                 payload = {
@@ -154,7 +181,7 @@ class LLMClient:
                         {"role": "user", "content": user_prompt},
                     ],
                     "temperature": self.openrouter_config.temperature,
-                    "max_tokens": self.openrouter_config.max_tokens,
+                    "max_tokens": max_tokens,
                 }
 
                 response = await self.client.post(
@@ -215,6 +242,68 @@ class LLMClient:
                     return ""
 
         return ""
+
+    async def generate_stress_advice(
+        self,
+        strain_score: float,
+        recovery_score: float | None = None,
+        current_time: str | None = None,
+    ) -> str:
+        """
+        Генерация совета по снижению стресса на основе текущих показателей WHOOP.
+
+        Args:
+            strain_score: Текущий уровень Strain
+            recovery_score: Уровень Recovery (опционально)
+            current_time: Текущее время в формате HH:MM (опционально)
+
+        Returns:
+            Сгенерированный совет или fallback сообщение при ошибке
+        """
+        try:
+            from datetime import datetime
+
+            if current_time is None:
+                current_time = datetime.now().strftime("%H:%M")
+
+            if recovery_score is None:
+                recovery_score = 0  # По умолчанию, если Recovery недоступен
+
+            # Получаем промпт из конфигурации
+            prompt_template = self.config.whoop_monitoring.stress_advice_prompt
+
+            # Заменяем плейсхолдеры
+            user_prompt = prompt_template.replace("{{strain_score}}", str(strain_score))
+            user_prompt = user_prompt.replace("{{recovery_score}}", str(recovery_score))
+            user_prompt = user_prompt.replace("{{current_time}}", current_time)
+
+            # Обрабатываем условную логику для Recovery
+            # Упрощенная обработка: если Recovery < 50, добавляем соответствующую инструкцию
+            if recovery_score < 50:
+                user_prompt += "\n\nУчти: Recovery низкий (< 50%), значит восстановление недостаточное. Рекомендуй более щадящие техники восстановления."
+            elif recovery_score >= 70:
+                user_prompt += "\n\nУчти: Recovery хороший (>= 70%), значит организм готов к нагрузке. Можно рекомендовать более активные техники переключения."
+
+            # Вызываем OpenRouter
+            advice = await self._call_openrouter(user_prompt, max_retries=3, max_tokens=300)
+
+            return advice.strip()
+
+        except Exception as e:
+            logger.error("Failed to generate stress advice", extra={"error": str(e)})
+            # Fallback сообщение
+            if recovery_score is not None and recovery_score < 50:
+                return (
+                    f"Твой текущий Strain: {strain_score:.1f}, Recovery низкий ({recovery_score:.0f}%). "
+                    "Рекомендую сделать паузу: несколько глубоких вдохов, короткая прогулка или легкая растяжка. "
+                    "Помни: восстановление — это инвестиция в завтрашнюю продуктивность."
+                )
+            else:
+                return (
+                    f"Твой текущий Strain: {strain_score:.1f}. "
+                    "Рекомендую сделать паузу: несколько глубоких вдохов, переключение внимания на что-то другое, "
+                    "или короткая прогулка. Помни: ясность важнее скорости."
+                )
 
     async def close(self) -> None:
         """Закрытие HTTP клиента."""

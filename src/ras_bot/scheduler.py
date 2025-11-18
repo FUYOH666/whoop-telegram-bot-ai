@@ -7,6 +7,7 @@ from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,14 @@ class SlotScheduler:
         # Планируем обновление WHOOP данных в 22:00 (после S6)
         if self.config.whoop.is_configured:
             self._schedule_whoop_update()
+
+        # Планируем мониторинг стресса WHOOP в реальном времени
+        if (
+            self.config.whoop.is_configured
+            and hasattr(self.config, "whoop_monitoring")
+            and self.config.whoop_monitoring.enabled
+        ):
+            self._schedule_stress_monitoring()
 
         logger.info("Scheduler setup completed", extra={"slots_count": len(slots_config)})
 
@@ -186,6 +195,7 @@ class SlotScheduler:
         Задача для обновления WHOOP данных за сегодня.
 
         Выполняется в 22:00 для получения полных данных за день.
+        Также проверяет и обновляет токены при необходимости.
         """
         if self.user_id is None:
             logger.warning("Cannot update WHOOP data: user_id not set")
@@ -198,6 +208,19 @@ class SlotScheduler:
         try:
             whoop_client = self.bot.whoop_client
             storage = self.bot.storage
+
+            # Проверяем и обновляем токены перед запросом данных
+            # Это гарантирует, что токены всегда свежие
+            try:
+                # _get_access_token автоматически обновит токен, если нужно
+                await whoop_client._get_access_token(self.user_id)
+                logger.debug("Token check completed before data update", extra={"user_id": self.user_id})
+            except Exception as token_error:
+                logger.warning(
+                    "Token check failed, but continuing with data update",
+                    extra={"error": str(token_error), "user_id": self.user_id},
+                )
+                # Продолжаем попытку получить данные - возможно, токен еще валиден
 
             # Получаем все данные WHOOP за сегодня
             today = date.today()
@@ -230,4 +253,172 @@ class SlotScheduler:
                 extra={"error": str(e), "user_id": self.user_id},
             )
             # Не блокируем работу бота при ошибке WHOOP
+
+    def _schedule_stress_monitoring(self) -> None:
+        """Планирование периодической проверки уровня стресса."""
+        try:
+            monitoring_config = self.config.whoop_monitoring
+            interval_minutes = monitoring_config.check_interval_minutes
+
+            # Используем IntervalTrigger для периодической проверки
+            trigger = IntervalTrigger(minutes=interval_minutes)
+
+            self.scheduler.add_job(
+                self._check_stress_job,
+                trigger=trigger,
+                id="whoop_stress_monitoring",
+                name="WHOOP Stress Monitoring",
+                replace_existing=True,
+                max_instances=1,
+            )
+
+            logger.info(
+                "Stress monitoring scheduled",
+                extra={
+                    "interval_minutes": interval_minutes,
+                    "start_time": monitoring_config.start_time,
+                    "end_time": monitoring_config.end_time,
+                },
+            )
+
+        except Exception as e:
+            logger.error("Failed to schedule stress monitoring", extra={"error": str(e)})
+
+    async def _check_stress_job(self) -> None:
+        """
+        Задача для проверки уровня стресса и отправки уведомлений.
+
+        Проверяет текущий Strain и отправляет уведомление, если он превышает порог.
+        Учитывает активные часы и cooldown между уведомлениями.
+        """
+        if self.user_id is None:
+            logger.warning("Cannot check stress: user_id not set")
+            return
+
+        try:
+            monitoring_config = self.config.whoop_monitoring
+            storage = self.bot.storage
+            whoop_client = self.bot.whoop_client
+            llm_client = self.bot.llm_client
+
+            # Проверяем, включен ли мониторинг для пользователя
+            user_settings = storage.get_user_settings(self.user_id)
+            if not user_settings.get("monitoring_enabled", True):
+                logger.debug("Stress monitoring disabled for user", extra={"user_id": self.user_id})
+                return
+
+            # Проверяем активные часы
+            current_time = datetime.now().time()
+            start_time = datetime.strptime(monitoring_config.start_time, "%H:%M").time()
+            end_time = datetime.strptime(monitoring_config.end_time, "%H:%M").time()
+
+            # Если end_time = 00:00, это означает "до полуночи", т.е. до 23:59:59
+            if end_time == time(0, 0):
+                end_time = time(23, 59, 59)
+
+            if not (start_time <= current_time <= end_time):
+                logger.debug(
+                    "Outside active hours for stress monitoring",
+                    extra={"current_time": current_time.strftime("%H:%M"), "user_id": self.user_id},
+                )
+                return
+
+            # Проверяем cooldown
+            last_notification = storage.get_last_notification(
+                self.user_id, "high_strain", monitoring_config.notification_cooldown_hours
+            )
+            if last_notification:
+                logger.debug(
+                    "Cooldown active, skipping stress check",
+                    extra={"user_id": self.user_id},
+                )
+                return
+
+            # Получаем текущие данные WHOOP
+            today = date.today()
+            try:
+                # Проверяем и обновляем токены перед запросом
+                await whoop_client._get_access_token(self.user_id)
+
+                # Получаем данные через cycle endpoint (самый полный источник)
+                cycle_data = await whoop_client.get_cycle(self.user_id, today)
+                if not cycle_data:
+                    logger.debug("No cycle data available for stress check", extra={"user_id": self.user_id})
+                    return
+
+                # Извлекаем Strain из cycle данных
+                strain_score = None
+                if "score" in cycle_data and "strain" in cycle_data["score"]:
+                    strain_score = cycle_data["score"]["strain"].get("average")
+
+                if strain_score is None:
+                    logger.debug("Strain score not available", extra={"user_id": self.user_id})
+                    return
+
+                # Получаем порог из настроек пользователя или используем значение по умолчанию
+                threshold = user_settings.get("stress_threshold", monitoring_config.stress_threshold)
+
+                # Проверяем, превышает ли Strain порог
+                if strain_score < threshold:
+                    logger.debug(
+                        "Strain below threshold",
+                        extra={"strain": strain_score, "threshold": threshold, "user_id": self.user_id},
+                    )
+                    return
+
+                # Получаем Recovery для более умного уведомления
+                recovery_score = None
+                try:
+                    recovery_data = await whoop_client.get_recovery(self.user_id, today)
+                    if recovery_data and "score" in recovery_data:
+                        score = recovery_data["score"]
+                        recovery_score = score.get("recovery_score") or score.get("recovery_percentage")
+                except Exception as e:
+                    logger.warning("Failed to get recovery for stress notification", extra={"error": str(e)})
+
+                # Генерируем совет через LLM
+                current_time_str = datetime.now().strftime("%H:%M")
+                advice_text = await llm_client.generate_stress_advice(
+                    strain_score=strain_score,
+                    recovery_score=recovery_score,
+                    current_time=current_time_str,
+                )
+
+                # Отправляем уведомление пользователю
+                notification_message = f"⚠️ Высокий уровень стресса\n\n"
+                notification_message += f"Strain: {strain_score:.1f}"
+                if recovery_score is not None:
+                    notification_message += f" | Recovery: {recovery_score:.0f}%"
+                notification_message += f"\n\n{advice_text}"
+
+                await self.bot.bot.send_message(chat_id=self.user_id, text=notification_message)
+
+                # Сохраняем уведомление в БД
+                storage.save_notification(
+                    user_id=self.user_id,
+                    notification_type="high_strain",
+                    strain_score=strain_score,
+                    recovery_score=recovery_score,
+                    advice_text=advice_text,
+                )
+
+                logger.info(
+                    "Stress notification sent",
+                    extra={
+                        "user_id": self.user_id,
+                        "strain": strain_score,
+                        "recovery": recovery_score,
+                        "threshold": threshold,
+                    },
+                )
+
+            except Exception as e:
+                logger.error(
+                    "Failed to check stress or send notification",
+                    extra={"error": str(e), "user_id": self.user_id},
+                )
+                # Не блокируем работу бота при ошибках WHOOP API
+
+        except Exception as e:
+            logger.error("Failed to execute stress check job", extra={"error": str(e)})
 

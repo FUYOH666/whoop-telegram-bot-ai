@@ -84,6 +84,38 @@ class Storage:
                     ON whoop_data(date)
                     """
                 )
+                # Таблица для хранения уведомлений WHOOP
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS whoop_notifications (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL,
+                        notification_type TEXT NOT NULL,
+                        sent_at TEXT NOT NULL,
+                        strain_score REAL,
+                        recovery_score REAL,
+                        advice_text TEXT,
+                        created_at TEXT NOT NULL
+                    )
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_whoop_notifications_user_type 
+                    ON whoop_notifications(user_id, notification_type, sent_at)
+                    """
+                )
+                # Таблица для настроек пользователя
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS user_settings (
+                        user_id INTEGER PRIMARY KEY,
+                        monitoring_enabled INTEGER DEFAULT 1,
+                        stress_threshold REAL DEFAULT 12.0,
+                        updated_at TEXT NOT NULL
+                    )
+                    """
+                )
                 conn.commit()
                 logger.info("Database initialized successfully", extra={"db_path": str(self.db_path)})
         except sqlite3.Error as e:
@@ -521,6 +553,229 @@ class Storage:
         """
         today = date.today().isoformat()
         return self.get_whoop_data(today)
+
+    def save_notification(
+        self,
+        user_id: int,
+        notification_type: str,
+        strain_score: float | None = None,
+        recovery_score: float | None = None,
+        advice_text: str | None = None,
+    ) -> None:
+        """
+        Сохранение информации об отправленном уведомлении.
+
+        Args:
+            user_id: ID пользователя Telegram
+            notification_type: Тип уведомления (например, "high_strain")
+            strain_score: Значение Strain при отправке
+            recovery_score: Значение Recovery при отправке (если доступно)
+            advice_text: Текст совета (опционально, для истории)
+        """
+        sent_at = datetime.now().isoformat()
+        created_at = sent_at
+
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT INTO whoop_notifications 
+                    (user_id, notification_type, sent_at, strain_score, recovery_score, advice_text, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (user_id, notification_type, sent_at, strain_score, recovery_score, advice_text, created_at),
+                )
+                conn.commit()
+                logger.info("Notification saved", extra={"user_id": user_id, "type": notification_type})
+        except sqlite3.Error as e:
+            logger.error("Failed to save notification", extra={"error": str(e), "user_id": user_id})
+            raise
+
+    def get_last_notification(
+        self, user_id: int, notification_type: str, cooldown_hours: float
+    ) -> dict | None:
+        """
+        Получение последнего уведомления для проверки cooldown.
+
+        Args:
+            user_id: ID пользователя Telegram
+            notification_type: Тип уведомления
+            cooldown_hours: Количество часов cooldown
+
+        Returns:
+            Словарь с данными последнего уведомления или None если его нет или cooldown прошел
+        """
+        try:
+            from datetime import timedelta
+
+            cooldown_time = datetime.now() - timedelta(hours=cooldown_hours)
+
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT * FROM whoop_notifications
+                    WHERE user_id = ? AND notification_type = ?
+                    ORDER BY sent_at DESC
+                    LIMIT 1
+                    """,
+                    (user_id, notification_type),
+                )
+                row = cursor.fetchone()
+
+                if row:
+                    sent_at = datetime.fromisoformat(row["sent_at"])
+                    if sent_at >= cooldown_time:
+                        # Cooldown еще не прошел
+                        return dict(row)
+                return None
+
+        except Exception as e:
+            logger.error("Failed to get last notification", extra={"error": str(e), "user_id": user_id})
+            return None
+
+    def get_notification_history(self, user_id: int, limit: int = 20) -> list[dict]:
+        """
+        Получение истории уведомлений пользователя.
+
+        Args:
+            user_id: ID пользователя Telegram
+            limit: Максимальное количество записей (по умолчанию 20)
+
+        Returns:
+            Список словарей с данными уведомлений, отсортированных по дате (новые первые)
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT * FROM whoop_notifications
+                    WHERE user_id = ?
+                    ORDER BY sent_at DESC
+                    LIMIT ?
+                    """,
+                    (user_id, limit),
+                )
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
+
+        except Exception as e:
+            logger.error("Failed to get notification history", extra={"error": str(e), "user_id": user_id})
+            return []
+
+    def get_user_settings(self, user_id: int) -> dict:
+        """
+        Получение настроек пользователя.
+
+        Args:
+            user_id: ID пользователя Telegram
+
+        Returns:
+            Словарь с настройками:
+            {
+                "monitoring_enabled": bool,
+                "stress_threshold": float
+            }
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT * FROM user_settings
+                    WHERE user_id = ?
+                    """,
+                    (user_id,),
+                )
+                row = cursor.fetchone()
+
+                if row:
+                    return {
+                        "monitoring_enabled": bool(row["monitoring_enabled"]),
+                        "stress_threshold": row["stress_threshold"],
+                    }
+                else:
+                    # Возвращаем значения по умолчанию
+                    return {"monitoring_enabled": True, "stress_threshold": 12.0}
+
+        except Exception as e:
+            logger.error("Failed to get user settings", extra={"error": str(e), "user_id": user_id})
+            return {"monitoring_enabled": True, "stress_threshold": 12.0}
+
+    def update_user_settings(
+        self,
+        user_id: int,
+        monitoring_enabled: bool | None = None,
+        stress_threshold: float | None = None,
+    ) -> None:
+        """
+        Обновление настроек пользователя.
+
+        Args:
+            user_id: ID пользователя Telegram
+            monitoring_enabled: Включен ли мониторинг (опционально)
+            stress_threshold: Порог стресса (опционально)
+        """
+        updated_at = datetime.now().isoformat()
+
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+
+                # Проверяем, существует ли запись
+                cursor.execute("SELECT * FROM user_settings WHERE user_id = ?", (user_id,))
+                exists = cursor.fetchone()
+
+                if exists:
+                    # Обновляем существующую запись
+                    updates = []
+                    params = []
+
+                    if monitoring_enabled is not None:
+                        updates.append("monitoring_enabled = ?")
+                        params.append(1 if monitoring_enabled else 0)
+
+                    if stress_threshold is not None:
+                        updates.append("stress_threshold = ?")
+                        params.append(stress_threshold)
+
+                    if updates:
+                        updates.append("updated_at = ?")
+                        params.append(updated_at)
+                        params.append(user_id)
+
+                        cursor.execute(
+                            f"""
+                            UPDATE user_settings
+                            SET {', '.join(updates)}
+                            WHERE user_id = ?
+                            """,
+                            params,
+                        )
+                else:
+                    # Создаем новую запись
+                    monitoring = 1 if (monitoring_enabled if monitoring_enabled is not None else True) else 0
+                    threshold = stress_threshold if stress_threshold is not None else 12.0
+
+                    cursor.execute(
+                        """
+                        INSERT INTO user_settings (user_id, monitoring_enabled, stress_threshold, updated_at)
+                        VALUES (?, ?, ?, ?)
+                        """,
+                        (user_id, monitoring, threshold, updated_at),
+                    )
+
+                conn.commit()
+                logger.info("User settings updated", extra={"user_id": user_id})
+
+        except sqlite3.Error as e:
+            logger.error("Failed to update user settings", extra={"error": str(e), "user_id": user_id})
+            raise
 
     def get_whoop_data(self, target_date: str) -> dict | None:
         """
