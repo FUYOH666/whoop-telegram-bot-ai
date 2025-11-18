@@ -247,6 +247,31 @@ class SlotScheduler:
                 },
             )
 
+        except ValueError as e:
+            # Если ошибка связана с истечением токена, отправляем уведомление пользователю
+            error_msg = str(e)
+            if "reconnect" in error_msg.lower() or "expired" in error_msg.lower():
+                logger.warning(
+                    "WHOOP token expired, notifying user",
+                    extra={"user_id": self.user_id, "error": error_msg},
+                )
+                if self.bot and self.bot.bot:
+                    try:
+                        await self.bot.bot.send_message(
+                            self.user_id,
+                            "⚠️ Токен WHOOP истек. Необходимо переподключение:\n\n"
+                            "1. Отправь команду /whoop_connect\n"
+                            "2. Перейди по ссылке и авторизуйся\n"
+                            "3. Скопируй authorization code со страницы\n"
+                            "4. Отправь команду /whoop_code <твой_код>\n\n"
+                            "После переподключения данные будут обновляться автоматически."
+                        )
+                    except Exception as send_error:
+                        logger.error(
+                            "Failed to send reconnection notification",
+                            extra={"user_id": self.user_id, "error": str(send_error)},
+                        )
+            raise
         except Exception as e:
             logger.error(
                 "Failed to update WHOOP data",

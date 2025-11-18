@@ -70,9 +70,13 @@ cp .env.example .env
    - Включите "Enable free endpoints that may publish prompts" (опционально)
    - Сохраните настройки
 
-6. При необходимости отредактируйте `config.yaml`:
+6. При необходимости скопируйте и настройте конфигурацию:
+   ```bash
+   cp config.yaml.example config.yaml
+   ```
+   Отредактируйте `config.yaml`:
    - Времена слотов (по умолчанию: 07:30, 09:30, 11:00, 14:00, 17:30, 21:00)
-   - Промпты для программирования подсознания
+   - Промпты для программирования подсознания под свои цели
    - Параметры LLM (temperature, max_tokens)
 
 7. Запустите бота:
@@ -119,7 +123,7 @@ uv run python -m ras_bot.main
 - **Развернутые сообщения:** Увеличенное количество токенов (700 для S1-S5, 1500 для S6) для более глубокого программирования подсознания
 - **Fallback:** Если OpenRouter недоступен, используются предзаготовленные сообщения из `config.yaml`
 - **Статистика:** Отслеживание выполнения слотов и эталонных дней через команду `/stats`
-- **Бесплатная модель:** Используется DeepSeek V3.1 (free) — полностью бесплатная модель с хорошим качеством
+- **Бесплатная модель:** Используется DeepSeek R1T2 Chimera (free) — полностью бесплатная модель с улучшенными возможностями
 
 ## Настройка промптов
 
@@ -140,29 +144,30 @@ RAS Bot поддерживает интеграцию с WHOOP для получ
    - Зарегистрируйтесь на https://developer.whoop.com/
    - Создайте новое приложение
    - Получите `Client ID` и `Client Secret`
-   - Укажите Redirect URL: `https://scanovich.ai/whoop-callback.html` (будет настроен в шаге 4)
-   - Разместите Privacy Policy на вашем сайте (например, `scanovich.ai/privacy`)
+   - Укажите Redirect URL (например, `https://your-domain.com/whoop-callback.html`)
+   - Разместите Privacy Policy на вашем сайте (требуется для OAuth)
 
 2. **Добавьте учетные данные в `.env`:**
    ```bash
    WHOOP_CLIENT_ID=your_client_id_here
    WHOOP_CLIENT_SECRET=your_client_secret_here
+   WHOOP_REDIRECT_URI=https://your-domain.com/whoop-callback.html
    ```
+   Или настройте `redirect_uri` в `config.yaml`.
 
 3. **Разместите callback страницу на вашем сайте:**
-   - Загрузите файл `whoop_callback.html` на ваш сайт `scanovich.ai`
-   - Разместите его по адресу: `https://scanovich.ai/whoop-callback.html`
+   - Загрузите файл `whoop_callback.html` на ваш сайт
+   - Разместите его по адресу, указанному в `WHOOP_REDIRECT_URI` (например, `https://your-domain.com/whoop-callback.html`)
    - Это простая HTML страница, которая обработает OAuth callback от WHOOP
 
-4. **Обновите Redirect URL в WHOOP Developer Platform:**
-   - Откройте настройки вашего приложения в WHOOP Developer Platform
-   - Измените Redirect URL на: `https://scanovich.ai/whoop-callback.html`
-   - Сохраните изменения
+4. **Убедитесь, что Redirect URL совпадает:**
+   - Redirect URL в WHOOP Developer Platform должен точно совпадать с `WHOOP_REDIRECT_URI` в `.env` или `redirect_uri` в `config.yaml`
+   - Проверьте, что URL идентичны (включая протокол `https://` и путь)
 
 5. **Подключите WHOOP в боте:**
    - Отправьте команду `/whoop_connect` боту
    - Перейдите по ссылке и авторизуйтесь в WHOOP
-   - После авторизации вы будете перенаправлены на страницу `scanovich.ai/whoop-callback.html`
+   - После авторизации вы будете перенаправлены на вашу callback страницу
    - На странице будет показан authorization code - скопируйте его
    - Отправьте команду `/whoop_code <ваш_code>` боту
 
@@ -279,7 +284,7 @@ uv run pyright
 
 ## Автор
 
-Aleksandr Mordvinov
+Создано с любовью для самосовершенствования и достижения целей.
 
 ## Благодарности
 

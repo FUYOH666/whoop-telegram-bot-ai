@@ -161,7 +161,7 @@
 
 ```bash
 # На вашем компьютере
-scp -r /Users/aleksandrmordvinov/development/RAS-TGbot user@your-server:/opt/ras-bot
+scp -r /path/to/RAS-TGbot user@your-server:/opt/ras-bot
 ```
 
 2. **На сервере создайте `.env` файл:**

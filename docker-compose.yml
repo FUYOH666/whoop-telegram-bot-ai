@@ -14,6 +14,8 @@ services:
       - ./ras_bot.db:/app/ras_bot.db
       # Монтируем конфиг для возможности изменений без пересборки
       - ./config.yaml:/app/config.yaml:ro
+      # Монтируем исходный код для возможности изменений без пересборки
+      - ./src:/app/src
     environment:
       - PYTHONUNBUFFERED=1
     # Healthcheck для мониторинга

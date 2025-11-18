@@ -451,29 +451,66 @@ class RASBot:
             parts.append("📊 Текущие показатели WHOOP:\n")
 
             # Recovery (если доступен за сегодня)
-            recovery_data = None
-            if whoop_data.get("recovery_score") is not None:
-                recovery_data = await self.whoop_client.get_recovery(user_id, today)
-                if recovery_data:
-                    score = recovery_data.get("score", {})
-                    recovery_score = score.get("recovery_score")
-                    hrv = score.get("hrv_rmssd_milli")
-                    rhr = score.get("resting_heart_rate")
+            recovery_score = whoop_data.get("recovery_score")
+            if recovery_score is not None:
+                # Пробуем получить детальные данные для HRV и RHR
+                # Сначала из raw_data (если есть), потом через API
+                hrv = None
+                rhr = None
+                recovery_data = None
+                
+                # Проверяем raw_data из get_all_data
+                raw_data = whoop_data.get("raw_data", {})
+                recovery_raw = raw_data.get("recovery")
+                if recovery_raw:
+                    score = recovery_raw.get("score", {})
+                    hrv = score.get("hrv_rmssd_milli") or score.get("hrv_rmssd") or score.get("hrv")
+                    rhr = score.get("resting_heart_rate") or score.get("resting_hr")
+                
+                # Если не нашли в raw_data, пробуем через API
+                if hrv is None or rhr is None:
+                    recovery_data = await self.whoop_client.get_recovery(user_id, today)
+                    if recovery_data:
+                        score = recovery_data.get("score", {})
+                        recovery_score = score.get("recovery_score") or recovery_score
+                        if hrv is None:
+                            hrv = score.get("hrv_rmssd_milli") or score.get("hrv_rmssd") or score.get("hrv")
+                        if rhr is None:
+                            rhr = score.get("resting_heart_rate") or score.get("resting_hr")
 
-                    recovery_line = f"Recovery: {recovery_score:.0f}%"
-                    if hrv:
-                        recovery_line += f" | HRV: {hrv:.0f}ms"
-                    if rhr:
-                        recovery_line += f" | RHR: {rhr:.0f} bpm"
-                    parts.append(recovery_line)
+                # Эмодзи в зависимости от уровня Recovery
+                if recovery_score >= 67:
+                    recovery_emoji = "🟢"
+                elif recovery_score >= 34:
+                    recovery_emoji = "🟡"
+                else:
+                    recovery_emoji = "🔴"
+
+                recovery_line = f"{recovery_emoji} Recovery: {recovery_score:.0f}%"
+                # HRV может быть в миллисекундах (hrv_rmssd_milli) или уже в миллисекундах
+                if hrv is not None and hrv > 0:
+                    # Если значение больше 1000, значит это микросекунды, делим на 1000
+                    # Если меньше 1000, значит уже в миллисекундах
+                    if hrv > 1000:
+                        hrv_display = hrv / 1000
+                    else:
+                        hrv_display = hrv
+                    recovery_line += f" | HRV: {hrv_display:.0f}ms"
+                if rhr is not None:
+                    recovery_line += f" | RHR: {rhr:.0f} bpm"
+                parts.append(recovery_line)
 
             # Sleep (если доступен за сегодня)
-            sleep_data = None
-            if whoop_data.get("sleep_duration") is not None:
-                sleep_data = await self.whoop_client.get_sleep(user_id, today)
-                if sleep_data:
-                    sleep_duration = whoop_data.get("sleep_duration")
-                    parts.append(f"Sleep: {sleep_duration:.1f}ч (сегодня)")
+            sleep_duration = whoop_data.get("sleep_duration")
+            if sleep_duration is not None:
+                # Эмодзи в зависимости от продолжительности сна
+                if sleep_duration >= 7:
+                    sleep_emoji = "😴"
+                elif sleep_duration >= 6:
+                    sleep_emoji = "😌"
+                else:
+                    sleep_emoji = "😴"
+                parts.append(f"{sleep_emoji} Sleep: {sleep_duration:.1f}ч (сегодня)")
             else:
                 # Пробуем получить за вчера
                 yesterday = date.today() - timedelta(days=1)
@@ -483,23 +520,39 @@ class RASBot:
                     sleep_duration_ms = stage_summary.get("total_in_bed_time_milli", 0)
                     if sleep_duration_ms:
                         sleep_hours = sleep_duration_ms / (1000 * 60 * 60)
-                        parts.append(f"Sleep: {sleep_hours:.1f}ч (вчера)")
+                        if sleep_hours >= 7:
+                            sleep_emoji = "😴"
+                        elif sleep_hours >= 6:
+                            sleep_emoji = "😌"
+                        else:
+                            sleep_emoji = "😴"
+                        parts.append(f"{sleep_emoji} Sleep: {sleep_hours:.1f}ч (вчера)")
 
             # Strain (текущий за сегодня)
-            if whoop_data.get("strain_score") is not None:
-                parts.append(f"Strain: {whoop_data['strain_score']:.1f} (сегодня)")
+            strain_score = whoop_data.get("strain_score")
+            if strain_score is not None:
+                # Эмодзи в зависимости от уровня Strain
+                if strain_score >= 18:
+                    strain_emoji = "🔥"
+                elif strain_score >= 14:
+                    strain_emoji = "⚡"
+                elif strain_score >= 10:
+                    strain_emoji = "💪"
+                else:
+                    strain_emoji = "😊"
+                parts.append(f"{strain_emoji} Strain: {strain_score:.1f} (сегодня)")
 
             # Workouts
             workouts_count = whoop_data.get("workouts_count", 0)
             if workouts_count > 0:
-                parts.append(f"Workouts: {workouts_count}")
+                parts.append(f"🏋️ Workouts: {workouts_count}")
             else:
-                parts.append("Workouts: 0")
+                parts.append("🏋️ Workouts: 0")
 
             # Время обновления
             from datetime import datetime
             current_time = datetime.now().strftime("%H:%M")
-            parts.append(f"\nОбновлено: {current_time}")
+            parts.append(f"\n⏰ Обновлено: {current_time}")
 
             message_text = "\n".join(parts)
             await message.answer(message_text)
@@ -507,11 +560,24 @@ class RASBot:
             logger.info("WHOOP now command processed", extra={"user_id": user_id})
 
         except Exception as e:
-            logger.error("Failed to get WHOOP current data", extra={"error": str(e), "user_id": user_id})
-            await message.answer(
-                f"❌ Не удалось получить данные WHOOP: {str(e)}\n\n"
-                "Проверь подключение через /whoop_connect"
-            )
+            error_msg = str(e)
+            logger.error("Failed to get WHOOP current data", extra={"error": error_msg, "user_id": user_id})
+            
+            # Проверяем, является ли ошибка проблемой с токеном
+            if "401" in error_msg or "Authorization" in error_msg or "token" in error_msg.lower():
+                await message.answer(
+                    "❌ Токен WHOOP истек или недействителен.\n\n"
+                    "Необходимо переподключить WHOOP:\n"
+                    "1. Отправь команду /whoop_connect\n"
+                    "2. Перейди по ссылке и авторизуйся\n"
+                    "3. Скопируй authorization code со страницы\n"
+                    "4. Отправь команду /whoop_code <твой_код>"
+                )
+            else:
+                await message.answer(
+                    f"❌ Не удалось получить данные WHOOP: {error_msg}\n\n"
+                    "Проверь подключение через /whoop_connect"
+                )
 
     async def _handle_whoop_monitoring(self, message: Message) -> None:
         """Обработчик команды /whoop_monitoring on/off."""

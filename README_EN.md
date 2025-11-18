@@ -51,7 +51,7 @@ RAS Bot is not just another reminder bot. It's a personal day metronome that hel
   - Notification history via `/whoop_alerts` command
 - **Fallback:** If OpenRouter is unavailable, predefined messages from `config.yaml` are used
 - **Statistics:** Track slot completion and ideal days via `/stats` command
-- **Free Model:** Uses DeepSeek V3.1 (free) — completely free model with good quality
+- **Free Model:** Uses DeepSeek R1T2 Chimera (free) — completely free model with enhanced capabilities
 
 ## Installation
 
@@ -91,9 +91,13 @@ cp .env.example .env
    - Enable "Enable free endpoints that may publish prompts" (optional)
    - Save settings
 
-6. Edit `config.yaml` if needed:
+6. Copy and configure if needed:
+   ```bash
+   cp config.yaml.example config.yaml
+   ```
+   Edit `config.yaml`:
    - Slot times (default: 07:30, 09:30, 11:00, 14:00, 17:30, 21:00)
-   - Prompts for subconscious programming
+   - Prompts for subconscious programming tailored to your goals
    - LLM parameters (temperature, max_tokens)
 
 7. Run the bot:
@@ -138,29 +142,30 @@ RAS Bot supports WHOOP integration to get physical metrics (Recovery, Sleep, Str
    - Register at https://developer.whoop.com/
    - Create a new application
    - Get `Client ID` and `Client Secret`
-   - Set Redirect URL: `https://scanovich.ai/whoop-callback.html` (will be configured in step 4)
-   - Host Privacy Policy on your website (e.g., `scanovich.ai/privacy`)
+   - Set Redirect URL (e.g., `https://your-domain.com/whoop-callback.html`)
+   - Host Privacy Policy on your website (required for OAuth)
 
 2. **Add credentials to `.env`:**
    ```bash
    WHOOP_CLIENT_ID=your_client_id_here
    WHOOP_CLIENT_SECRET=your_client_secret_here
+   WHOOP_REDIRECT_URI=https://your-domain.com/whoop-callback.html
    ```
+   Or configure `redirect_uri` in `config.yaml`.
 
 3. **Host callback page on your website:**
-   - Upload `whoop_callback.html` file to your website `scanovich.ai`
-   - Place it at: `https://scanovich.ai/whoop-callback.html`
+   - Upload `whoop_callback.html` file to your website
+   - Place it at the URL specified in `WHOOP_REDIRECT_URI` (e.g., `https://your-domain.com/whoop-callback.html`)
    - This is a simple HTML page that handles OAuth callback from WHOOP
 
-4. **Update Redirect URL in WHOOP Developer Platform:**
-   - Open your application settings in WHOOP Developer Platform
-   - Change Redirect URL to: `https://scanovich.ai/whoop-callback.html`
-   - Save changes
+4. **Ensure Redirect URL matches:**
+   - Redirect URL in WHOOP Developer Platform must exactly match `WHOOP_REDIRECT_URI` in `.env` or `redirect_uri` in `config.yaml`
+   - Verify that URLs are identical (including `https://` protocol and path)
 
 5. **Connect WHOOP in the bot:**
    - Send `/whoop_connect` command to the bot
    - Follow the link and authorize in WHOOP
-   - After authorization, you'll be redirected to `scanovich.ai/whoop-callback.html`
+   - After authorization, you'll be redirected to your callback page
    - The page will show an authorization code - copy it
    - Send `/whoop_code <your_code>` command to the bot
 
@@ -269,7 +274,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Author
 
-Aleksandr Mordvinov
+Created with love for self-improvement and goal achievement.
 
 ## Acknowledgments
 

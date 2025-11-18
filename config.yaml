@@ -3,7 +3,7 @@
 # Параметры OpenRouter
 openrouter:
   api_url: "https://openrouter.ai/api/v1/chat/completions"
-  model: "deepseek/deepseek-chat-v3.1:free" # Бесплатная модель DeepSeek V3.1
+  model: "tngtech/deepseek-r1t2-chimera:free" # Бесплатная модель DeepSeek R1T2 Chimera (более умная)
   # Temperature: 0.5-0.6 оптимально для стабильных мотивационных сообщений
   # (0.7 слишком случайно, может давать непредсказуемые ответы)
   temperature: 0.5
@@ -169,6 +169,7 @@ whoop:
     - "read:workout"
     - "read:profile"
     - "read:cycles" # Для доступа к /cycle endpoint с полными данными за день
+    - "offline" # Запрашиваем refresh_token для автоматического обновления токенов
   # client_id и client_secret загружаются из переменных окружения WHOOP_CLIENT_ID и WHOOP_CLIENT_SECRET
 
 # Мониторинг WHOOP в реальном времени

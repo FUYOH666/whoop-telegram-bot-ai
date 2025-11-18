@@ -36,3 +36,7 @@ debug_*.py
 check_*.py
 test_*_endpoint.py
 test_*_integration.py
+
+# Config backups
+config.yaml.backup
+*.backup

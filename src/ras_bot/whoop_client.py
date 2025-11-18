@@ -429,11 +429,28 @@ class WhoopClient:
 
                 response = await self.client.get(url, headers=headers, params=params)
 
-                if response.status_code == 401 and attempt < max_retries - 1:
-                    # Токен невалиден, пробуем обновить
-                    logger.warning("Token expired, refreshing...", extra={"user_id": user_id})
-                    await self.refresh_access_token(user_id)
-                    continue
+                if response.status_code == 401:
+                    # Токен невалиден
+                    if attempt < max_retries - 1:
+                        # Пробуем обновить токен
+                        logger.warning("Token expired, attempting refresh...", extra={"user_id": user_id})
+                        try:
+                            await self.refresh_access_token(user_id)
+                            continue
+                        except ValueError as refresh_error:
+                            # Если refresh не работает, это означает, что нужна переавторизация
+                            logger.error(
+                                "Token refresh failed, reconnection required",
+                                extra={"user_id": user_id, "error": str(refresh_error)},
+                            )
+                            raise ValueError(
+                                "WHOOP token expired and refresh failed. Please reconnect via /whoop_connect"
+                            ) from refresh_error
+                    else:
+                        # Все попытки исчерпаны
+                        raise ValueError(
+                            "WHOOP token expired. Please reconnect via /whoop_connect"
+                        )
 
                 # Обработка rate limit (429 Too Many Requests)
                 if response.status_code == 429:
