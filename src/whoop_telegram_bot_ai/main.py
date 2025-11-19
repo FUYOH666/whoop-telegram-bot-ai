@@ -34,7 +34,7 @@ def setup_logging(config: Config) -> None:
                 log_data = {
                     "time": self.formatTime(record, self.datefmt),
                     "level": record.levelname,
-                    "service": "ras_bot",
+                    "service": "whoop_telegram_bot_ai",
                     "message": record.getMessage(),
                 }
                 # Добавляем дополнительные поля из extra

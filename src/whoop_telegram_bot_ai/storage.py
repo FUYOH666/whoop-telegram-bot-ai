@@ -1,4 +1,4 @@
-"""Хранилище данных для RAS Bot - SQLite база данных."""
+"""Хранилище данных для Whoop Telegram Bot AI - SQLite база данных."""
 
 import sqlite3
 import logging

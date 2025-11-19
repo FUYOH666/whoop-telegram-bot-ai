@@ -1,4 +1,4 @@
-"""Конфигурация RAS Bot - загрузка YAML и переменных окружения."""
+"""Конфигурация Whoop Telegram Bot AI - загрузка YAML и переменных окружения."""
 
 import logging
 from pathlib import Path

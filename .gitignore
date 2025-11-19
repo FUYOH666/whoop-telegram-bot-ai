@@ -40,3 +40,6 @@ test_*_integration.py
 # Config backups
 config.yaml.backup
 *.backup
+
+# Personal WHOOP data exports
+my_whoop_data_*/

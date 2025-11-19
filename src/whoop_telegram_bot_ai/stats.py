@@ -1,4 +1,4 @@
-"""Статистика и аналитика для RAS Bot."""
+"""Статистика и аналитика для Whoop Telegram Bot AI."""
 
 import logging
 from datetime import date, timedelta
@@ -106,7 +106,7 @@ class StatsCalculator:
             "S1": "Утро тела",
             "S2": "Опора 'я есть'",
             "S3": "Фокус-квант",
-            "S4": "Шаг к деньгам",
+            "S4": "Шаг к цели",
             "S5": "Закат/присутствие",
             "S6": "Оценка дня",
         }
