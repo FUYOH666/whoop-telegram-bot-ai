@@ -67,9 +67,11 @@ We're open to any ideas! Here's what can be improved:
 
 ### Вопросы? / Questions?
 
-Не стесняйтесь открывать Issue для любых вопросов!
+Не стесняйтесь открывать Issue для любых вопросов!  
+Также можете связаться через Telegram: [@ScanovichAI](https://t.me/ScanovichAI)
 
-Don't hesitate to open an Issue for any questions!
+Don't hesitate to open an Issue for any questions!  
+You can also contact via Telegram: [@ScanovichAI](https://t.me/ScanovichAI)
 
 ---
 
