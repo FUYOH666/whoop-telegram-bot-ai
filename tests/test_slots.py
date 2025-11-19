@@ -2,7 +2,7 @@
 
 import pytest
 
-from ras_bot.slots import (
+from whoop_telegram_bot_ai.slots import (
     get_all_slot_ids,
     get_slot_buttons,
     get_slot_description,

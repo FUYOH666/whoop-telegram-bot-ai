@@ -20,7 +20,7 @@ class SlotScheduler:
         Инициализация планировщика.
 
         Args:
-            bot: Экземпляр RASBot
+            bot: Экземпляр WhoopTelegramBotAI
             config: Конфигурация приложения
             user_id: ID пользователя Telegram для отправки сообщений (может быть None)
         """
@@ -47,6 +47,9 @@ class SlotScheduler:
             and self.config.whoop_monitoring.enabled
         ):
             self._schedule_stress_monitoring()
+
+        # Планируем еженедельный отчет (каждое воскресенье в 20:00)
+        self._schedule_weekly_report()
 
         logger.info("Scheduler setup completed", extra={"slots_count": len(slots_config)})
 
@@ -446,4 +449,97 @@ class SlotScheduler:
 
         except Exception as e:
             logger.error("Failed to execute stress check job", extra={"error": str(e)})
+
+    def _schedule_weekly_report(self) -> None:
+        """Планирование задачи отправки еженедельного отчета."""
+        try:
+            # Планируем на воскресенье в 20:00
+            trigger = CronTrigger(day_of_week="sun", hour=20, minute=0)
+
+            self.scheduler.add_job(
+                self._send_weekly_report_job,
+                trigger=trigger,
+                id="weekly_report",
+                name="Send Weekly Report",
+                replace_existing=True,
+                max_instances=1,
+            )
+
+            logger.info("Weekly report job scheduled", extra={"time": "Sunday 20:00"})
+
+        except Exception as e:
+            logger.error("Failed to schedule weekly report", extra={"error": str(e)})
+
+    async def _send_weekly_report_job(self) -> None:
+        """
+        Задача для отправки еженедельного отчета.
+
+        Выполняется каждое воскресенье в 20:00.
+        """
+        if self.user_id is None:
+            logger.warning("Cannot send weekly report: user_id not set")
+            return
+
+        if not self.bot:
+            logger.warning("Bot not available for weekly report")
+            return
+
+        try:
+            # Проверяем наличие модулей аналитики
+            analytics_module = self.bot._get_analytics_module()
+            if not analytics_module:
+                logger.info("No export data available for weekly report")
+                # Можно отправить сообщение пользователю, что данных нет
+                if self.bot and self.bot.bot:
+                    await self.bot.bot.send_message(
+                        self.user_id,
+                        "📊 Еженедельный отчет недоступен: экспортированные данные WHOOP не найдены.\n\n"
+                        "Для получения еженедельных отчетов экспортируйте данные из WHOOP приложения "
+                        "и поместите CSV файлы в папку my_whoop_data_YYYY_MM_DD/ в корне проекта."
+                    )
+                return
+
+            analytics, report_generator = analytics_module
+
+            # Генерируем отчет
+            report = await report_generator.generate_weekly_report()
+
+            # Отправляем отчет пользователю
+            # Разбиваем длинное сообщение на части
+            max_length = 4000
+            if len(report) > max_length:
+                parts = [report[i : i + max_length] for i in range(0, len(report), max_length)]
+                for i, part in enumerate(parts, 1):
+                    if i == 1:
+                        await self.bot.bot.send_message(
+                            self.user_id,
+                            f"📊 **Еженедельный отчет** (часть {i}/{len(parts)}):\n\n{part}"
+                        )
+                    else:
+                        await self.bot.bot.send_message(
+                            self.user_id,
+                            f"(продолжение {i}/{len(parts)})\n\n{part}"
+                        )
+            else:
+                await self.bot.bot.send_message(
+                    self.user_id,
+                    f"📊 **Еженедельный отчет:**\n\n{report}"
+                )
+
+            logger.info("Weekly report sent successfully", extra={"user_id": self.user_id})
+
+        except Exception as e:
+            logger.error(
+                "Failed to send weekly report",
+                extra={"error": str(e), "user_id": self.user_id},
+            )
+            # Пытаемся отправить сообщение об ошибке
+            if self.bot and self.bot.bot:
+                try:
+                    await self.bot.bot.send_message(
+                        self.user_id,
+                        f"❌ Произошла ошибка при генерации еженедельного отчета: {str(e)}"
+                    )
+                except Exception:
+                    pass
 

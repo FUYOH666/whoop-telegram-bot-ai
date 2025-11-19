@@ -1,4 +1,4 @@
-# Деплой RAS Bot на сервер
+# Деплой Whoop Telegram Bot AI на сервер
 
 Инструкции по запуску бота на Linux сервере для работы 24/7.
 
@@ -112,7 +112,7 @@
   - Хорошая инфраструктура
 - **Ссылка:** https://selectel.ru
 
-### Рекомендации для RAS Bot
+### Рекомендации для Whoop Telegram Bot AI
 
 **Для начала (бесплатно):**
 - **Render** или **Railway** — простое развертывание, достаточно для тестирования
@@ -122,13 +122,13 @@
 - **Vultr** ($2.50/мес) — самый дешевый вариант
 - **DigitalOcean** ($4/мес) — если нужна простота
 
-**Минимальные требования для RAS Bot:**
+**Минимальные требования для Whoop Telegram Bot AI:**
 - 512MB RAM (достаточно)
 - 1 vCPU (достаточно)
 - 10GB SSD (более чем достаточно)
 - Ubuntu 22.04 или Debian 12
 
-**Примечание:** RAS Bot очень легкий (6 запросов в день к OpenRouter, SQLite БД), поэтому даже самый дешевый VPS справится без проблем.
+**Примечание:** Whoop Telegram Bot AI очень легкий (6 запросов в день к OpenRouter, SQLite БД), поэтому даже самый дешевый VPS справится без проблем.
 
 ## Быстрый старт на Render (бесплатно)
 
@@ -139,7 +139,7 @@
 3. Создайте новый **"Background Worker"** (не Web Service!)
 4. Укажите:
    - Build Command: `pip install uv && uv sync`
-   - Start Command: `uv run python -m ras_bot.main`
+   - Start Command: `uv run python -m whoop_telegram_bot_ai.main`
 5. Добавьте переменные окружения из `.env`:
    - `TELEGRAM_BOT_TOKEN`
    - `OPENROUTER_API_KEY`
@@ -161,7 +161,7 @@
 
 ```bash
 # На вашем компьютере
-scp -r /path/to/RAS-TGbot user@your-server:/opt/ras-bot
+scp -r /path/to/whoop-telegram-bot-ai user@your-server:/opt/ras-bot
 ```
 
 2. **На сервере создайте `.env` файл:**
@@ -224,7 +224,7 @@ Type=simple
 User=your-username
 WorkingDirectory=/opt/ras-bot
 Environment="PATH=/opt/ras-bot/.venv/bin:/usr/local/bin:/usr/bin:/bin"
-ExecStart=/opt/ras-bot/.venv/bin/python -m ras_bot.main
+ExecStart=/opt/ras-bot/.venv/bin/python -m whoop_telegram_bot_ai.main
 Restart=always
 RestartSec=10
 StandardOutput=journal
@@ -268,7 +268,7 @@ screen -S ras-bot
 
 # Запуск бота
 cd /opt/ras-bot
-uv run python -m ras_bot.main
+uv run python -m whoop_telegram_bot_ai.main
 
 # Отключение: Ctrl+A, затем D
 
@@ -287,7 +287,7 @@ tmux new -s ras-bot
 
 # Запуск бота
 cd /opt/ras-bot
-uv run python -m ras_bot.main
+uv run python -m whoop_telegram_bot_ai.main
 
 # Отключение: Ctrl+B, затем D
 
@@ -299,7 +299,7 @@ tmux attach -t ras-bot
 
 1. **Используйте Docker** — самый надежный вариант с автоперезапуском
 2. **Настройте мониторинг** — можно добавить простой health-check скрипт
-3. **Резервное копирование БД** — регулярно копируйте `ras_bot.db`
+3. **Резервное копирование БД** — регулярно копируйте `whoop_telegram_bot_ai.db`
 4. **Логи** — настройте ротацию логов (Docker делает это автоматически)
 
 ## Проверка работы

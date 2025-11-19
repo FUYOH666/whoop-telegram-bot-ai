@@ -1,9 +1,13 @@
 [project]
-name = "ras-bot"
+name = "whoop-telegram-bot-ai"
 version = "0.1.0"
-description = "Личный метроном дня: 6 осознанных пингов для самосовершенствования"
+description = "Research project: Telegram bot with WHOOP integration and AI-powered productivity coaching. Uses LLM for personalized daily coaching through 6 daily slots. Personalized messages based on physical metrics from WHOOP."
 readme = "README.md"
 requires-python = ">=3.12"
+keywords = ["telegram-bot", "whoop-api", "health-tracking", "personal-assistant", "productivity", "fitness", "wellness", "ai-assistant", "llm", "self-improvement", "whoop-integration", "productivity-coaching", "research-project"]
+authors = [
+    {name = "Aleksandr Mordvinov"}
+]
 dependencies = [
     "aiogram>=3.13.0",
     "apscheduler>=3.10.4",

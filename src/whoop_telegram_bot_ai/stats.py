@@ -4,7 +4,7 @@ import logging
 from datetime import date, timedelta
 from typing import Any
 
-from ras_bot.slots import get_all_slot_ids, is_ideal_day
+from whoop_telegram_bot_ai.slots import get_all_slot_ids, is_ideal_day
 
 logger = logging.getLogger(__name__)
 

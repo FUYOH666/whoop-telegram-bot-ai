@@ -31,7 +31,7 @@ class OpenRouterConfig(BaseSettings):
 class DatabaseConfig(BaseSettings):
     """Конфигурация базы данных."""
 
-    path: str = "ras_bot.db"
+    path: str = "whoop_telegram_bot_ai.db"
 
     model_config = SettingsConfigDict(env_prefix="DATABASE_", case_sensitive=False)
 

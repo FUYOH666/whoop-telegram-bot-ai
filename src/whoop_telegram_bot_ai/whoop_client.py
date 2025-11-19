@@ -8,7 +8,7 @@ from urllib.parse import urlencode
 
 import httpx
 
-from ras_bot.config import WhoopConfig
+from whoop_telegram_bot_ai.config import WhoopConfig
 
 logger = logging.getLogger(__name__)
 

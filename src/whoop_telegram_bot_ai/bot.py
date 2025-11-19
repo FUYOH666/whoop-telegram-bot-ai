@@ -1,4 +1,4 @@
-"""Telegram бот для RAS Bot - обработка команд и сообщений."""
+"""Telegram бот Whoop Telegram Bot AI - обработка команд и сообщений."""
 
 import logging
 from datetime import date, datetime, timedelta
@@ -8,16 +8,20 @@ from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
-from ras_bot.config import Config
-from ras_bot.slots import get_slot_buttons, parse_callback_data
-from ras_bot.stats import StatsCalculator
-from ras_bot.whoop_client import WhoopClient
+from whoop_telegram_bot_ai.config import Config
+from whoop_telegram_bot_ai.pattern_analyzer import PatternAnalyzer
+from whoop_telegram_bot_ai.predictions import RecoveryPredictor
+from whoop_telegram_bot_ai.recommendations import RecommendationsGenerator
+from whoop_telegram_bot_ai.slots import get_slot_buttons, parse_callback_data
+from whoop_telegram_bot_ai.stats import StatsCalculator
+from whoop_telegram_bot_ai.weekly_report import WeeklyReportGenerator
+from whoop_telegram_bot_ai.whoop_client import WhoopClient
 
 logger = logging.getLogger(__name__)
 
 
-class RASBot:
-    """Telegram бот для RAS."""
+class WhoopTelegramBotAI:
+    """Telegram бот с интеграцией WHOOP и AI для продуктивности."""
 
     def __init__(
         self,
@@ -88,6 +92,12 @@ class RASBot:
 
         # Команда /whoop_alerts для истории уведомлений
         self.router.message.register(self._handle_whoop_alerts, Command("whoop_alerts"))
+
+        # Команды аналитики WHOOP
+        self.router.message.register(self._handle_weekly_report, Command("weekly_report"))
+        self.router.message.register(self._handle_analyze_patterns, Command("analyze_patterns"))
+        self.router.message.register(self._handle_recommendations, Command("recommendations"))
+        self.router.message.register(self._handle_predict_recovery, Command("predict_recovery"))
 
         # Обработка callback от inline-кнопок
         self.router.callback_query.register(
@@ -166,22 +176,32 @@ class RASBot:
             "• S4 (14:00) — Шаг к деньгам\n"
             "• S5 (17:30) — Закат/присутствие\n"
             "• S6 (21:00) — Оценка дня\n\n"
-            "Используй /stats для просмотра статистики.\n"
-            "Используй /health для проверки состояния бота.\n"
+            "**Основные команды:**\n"
+            "• /stats — статистика выполнения слотов\n"
+            "• /health — проверка состояния бота\n\n"
         )
 
         # Проверяем, подключен ли WHOOP
         if self.whoop_client and self.config.whoop.is_configured:
             tokens = self.storage.get_whoop_tokens(user_id)
             if tokens:
-                welcome_text += "\n✅ WHOOP подключен\n\n"
-                welcome_text += "Команды WHOOP:\n"
+                welcome_text += "✅ WHOOP подключен\n\n"
+                welcome_text += "**Команды WHOOP:**\n"
                 welcome_text += "• /whoop_now — текущие показатели\n"
                 welcome_text += "• /whoop_monitoring on/off — мониторинг стресса\n"
                 welcome_text += "• /whoop_threshold <value> — порог стресса\n"
-                welcome_text += "• /whoop_alerts — история уведомлений\n"
+                welcome_text += "• /whoop_alerts — история уведомлений\n\n"
             else:
-                welcome_text += "\nИспользуй /whoop_connect для подключения WHOOP.\n"
+                welcome_text += "Используй /whoop_connect для подключения WHOOP.\n\n"
+
+        # Проверяем наличие экспортированных данных для аналитики
+        analytics_module = self._get_analytics_module()
+        if analytics_module:
+            welcome_text += "📊 **Аналитика WHOOP доступна:**\n"
+            welcome_text += "• /weekly_report — еженедельный отчет\n"
+            welcome_text += "• /analyze_patterns — анализ паттернов\n"
+            welcome_text += "• /recommendations — персонализированные рекомендации\n"
+            welcome_text += "• /predict_recovery — предсказание Recovery\n"
 
         await message.answer(welcome_text)
         logger.info("Start command processed", extra={"user_id": user_id})
@@ -830,6 +850,218 @@ class RASBot:
         """Запуск бота в режиме polling."""
         logger.info("Starting bot polling...")
         await self.dp.start_polling(self.bot)
+
+    async def _handle_weekly_report(self, message: Message) -> None:
+        """Обработчик команды /weekly_report."""
+        user_id = message.from_user.id
+
+        try:
+            await message.answer("📊 Генерирую еженедельный отчет... Это может занять минуту.")
+
+            # Инициализируем модули аналитики
+            analytics_module = self._get_analytics_module()
+            if not analytics_module:
+                await message.answer(
+                    "❌ Экспортированные данные WHOOP не найдены.\n\n"
+                    "Для использования аналитики необходимо:\n"
+                    "1. Экспортировать данные из WHOOP приложения\n"
+                    "2. Поместить CSV файлы в папку my_whoop_data_YYYY_MM_DD/\n"
+                    "3. Или использовать данные через WHOOP API (команда /whoop_now)"
+                )
+                return
+
+            analytics, report_generator = analytics_module
+
+            # Генерируем отчет
+            report = await report_generator.generate_weekly_report()
+
+            # Разбиваем длинное сообщение на части (Telegram лимит 4096 символов)
+            max_length = 4000
+            if len(report) > max_length:
+                parts = [report[i : i + max_length] for i in range(0, len(report), max_length)]
+                for i, part in enumerate(parts, 1):
+                    if i == 1:
+                        await message.answer(f"📊 **Еженедельный отчет** (часть {i}/{len(parts)}):\n\n{part}")
+                    else:
+                        await message.answer(f"(продолжение {i}/{len(parts)})\n\n{part}")
+            else:
+                await message.answer(f"📊 **Еженедельный отчет:**\n\n{report}")
+
+            logger.info("Weekly report command processed", extra={"user_id": user_id})
+
+        except Exception as e:
+            logger.error("Failed to process weekly_report command", extra={"error": str(e), "user_id": user_id})
+            await message.answer(f"❌ Произошла ошибка при генерации отчета: {str(e)}")
+
+    async def _handle_analyze_patterns(self, message: Message) -> None:
+        """Обработчик команды /analyze_patterns."""
+        user_id = message.from_user.id
+
+        try:
+            await message.answer("🔍 Анализирую паттерны... Это может занять минуту.")
+
+            analytics_module = self._get_analytics_module()
+            if not analytics_module:
+                await message.answer(
+                    "❌ Экспортированные данные WHOOP не найдены.\n\n"
+                    "Для использования аналитики необходимо экспортировать данные из WHOOP приложения."
+                )
+                return
+
+            analytics, _ = analytics_module
+            pattern_analyzer = PatternAnalyzer(analytics, self.llm_client)
+
+            # Анализируем паттерны
+            analysis = await pattern_analyzer.analyze_patterns()
+
+            # Разбиваем длинное сообщение на части
+            max_length = 4000
+            if len(analysis) > max_length:
+                parts = [analysis[i : i + max_length] for i in range(0, len(analysis), max_length)]
+                for i, part in enumerate(parts, 1):
+                    if i == 1:
+                        await message.answer(f"🔍 **Анализ паттернов** (часть {i}/{len(parts)}):\n\n{part}")
+                    else:
+                        await message.answer(f"(продолжение {i}/{len(parts)})\n\n{part}")
+            else:
+                await message.answer(f"🔍 **Анализ паттернов:**\n\n{analysis}")
+
+            logger.info("Analyze patterns command processed", extra={"user_id": user_id})
+
+        except Exception as e:
+            logger.error("Failed to process analyze_patterns command", extra={"error": str(e), "user_id": user_id})
+            await message.answer(f"❌ Произошла ошибка при анализе паттернов: {str(e)}")
+
+    async def _handle_recommendations(self, message: Message) -> None:
+        """Обработчик команды /recommendations."""
+        user_id = message.from_user.id
+
+        try:
+            await message.answer("💡 Генерирую персонализированные рекомендации...")
+
+            analytics_module = self._get_analytics_module()
+            if not analytics_module:
+                await message.answer(
+                    "❌ Экспортированные данные WHOOP не найдены.\n\n"
+                    "Для использования аналитики необходимо экспортировать данные из WHOOP приложения."
+                )
+                return
+
+            analytics, _ = analytics_module
+            recommendations_generator = RecommendationsGenerator(analytics, self.llm_client)
+
+            # Генерируем рекомендации
+            recommendations = await recommendations_generator.generate_recommendations()
+
+            # Разбиваем длинное сообщение на части
+            max_length = 4000
+            if len(recommendations) > max_length:
+                parts = [recommendations[i : i + max_length] for i in range(0, len(recommendations), max_length)]
+                for i, part in enumerate(parts, 1):
+                    if i == 1:
+                        await message.answer(f"💡 **Рекомендации** (часть {i}/{len(parts)}):\n\n{part}")
+                    else:
+                        await message.answer(f"(продолжение {i}/{len(parts)})\n\n{part}")
+            else:
+                await message.answer(f"💡 **Персонализированные рекомендации:**\n\n{recommendations}")
+
+            logger.info("Recommendations command processed", extra={"user_id": user_id})
+
+        except Exception as e:
+            logger.error("Failed to process recommendations command", extra={"error": str(e), "user_id": user_id})
+            await message.answer(f"❌ Произошла ошибка при генерации рекомендаций: {str(e)}")
+
+    async def _handle_predict_recovery(self, message: Message) -> None:
+        """Обработчик команды /predict_recovery."""
+        user_id = message.from_user.id
+
+        try:
+            await message.answer("🔮 Анализирую данные для предсказания Recovery...")
+
+            analytics_module = self._get_analytics_module()
+            if not analytics_module:
+                await message.answer(
+                    "❌ Экспортированные данные WHOOP не найдены.\n\n"
+                    "Для использования аналитики необходимо экспортировать данные из WHOOP приложения."
+                )
+                return
+
+            analytics, _ = analytics_module
+            predictor = RecoveryPredictor(analytics, self.llm_client)
+
+            # Предсказываем Recovery
+            prediction = await predictor.predict_recovery()
+
+            # Разбиваем длинное сообщение на части
+            max_length = 4000
+            if len(prediction) > max_length:
+                parts = [prediction[i : i + max_length] for i in range(0, len(prediction), max_length)]
+                for i, part in enumerate(parts, 1):
+                    if i == 1:
+                        await message.answer(f"🔮 **Предсказание Recovery** (часть {i}/{len(parts)}):\n\n{part}")
+                    else:
+                        await message.answer(f"(продолжение {i}/{len(parts)})\n\n{part}")
+            else:
+                await message.answer(f"🔮 **Предсказание Recovery на завтра:**\n\n{prediction}")
+
+            logger.info("Predict recovery command processed", extra={"user_id": user_id})
+
+        except Exception as e:
+            logger.error("Failed to process predict_recovery command", extra={"error": str(e), "user_id": user_id})
+            await message.answer(f"❌ Произошла ошибка при предсказании Recovery: {str(e)}")
+
+    def _get_analytics_module(self) -> tuple[Any, Any] | None:
+        """
+        Получение модулей аналитики из экспортированных данных.
+
+        Returns:
+            Кортеж (WhoopAnalytics, WeeklyReportGenerator) или None если данных нет
+        """
+        from pathlib import Path
+
+        from whoop_telegram_bot_ai.analytics import WhoopAnalytics
+        from whoop_telegram_bot_ai.pattern_analyzer import PatternAnalyzer
+        from whoop_telegram_bot_ai.predictions import RecoveryPredictor
+        from whoop_telegram_bot_ai.recommendations import RecommendationsGenerator
+        from whoop_telegram_bot_ai.weekly_report import WeeklyReportGenerator
+        from whoop_telegram_bot_ai.whoop_export_parser import WhoopExportParser
+
+        # Ищем папку с экспортированными данными
+        project_root = Path(__file__).parent.parent.parent
+        export_dirs = list(project_root.glob("my_whoop_data_*"))
+
+        if not export_dirs:
+            logger.debug("No export directories found")
+            return None
+
+        # Берем самую новую папку
+        export_dir = sorted(export_dirs, key=lambda p: p.name, reverse=True)[0]
+
+        try:
+            # Парсим данные
+            parser = WhoopExportParser(export_dir)
+            data = parser.parse_all()
+
+            if not data["cycles"]:
+                logger.warning("No cycles data found in export")
+                return None
+
+            # Создаем аналитику
+            analytics = WhoopAnalytics(
+                data["cycles"],
+                data["sleeps"],
+                data["workouts"],
+                data["journal_entries"],
+            )
+
+            # Создаем генератор отчетов
+            report_generator = WeeklyReportGenerator(analytics, self.llm_client)
+
+            return (analytics, report_generator)
+
+        except Exception as e:
+            logger.error(f"Failed to initialize analytics module: {e}", exc_info=True)
+            return None
 
     async def stop(self) -> None:
         """Остановка бота."""

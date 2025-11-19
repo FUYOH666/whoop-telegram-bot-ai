@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ras_bot.storage import Storage
+from whoop_telegram_bot_ai.storage import Storage
 
 
 @pytest.fixture

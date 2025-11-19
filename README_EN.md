@@ -2,22 +2,34 @@
 
 English | [Русский](README.md)
 
-Personal day metronome: 6 mindful pings for self-improvement.
+<!--
+Keywords: telegram bot, whoop integration, health tracking, personal assistant, NLP programming, subconscious programming, daily routine, productivity bot, fitness tracker, wellness bot, AI assistant, LLM integration, OpenRouter, DeepSeek, self-improvement, habit tracking, mindfulness bot
+Description: Telegram bot for personal self-improvement with WHOOP integration. Uses LLM for subconscious programming through 6 daily slots. Personalized messages based on physical metrics.
+Topics: telegram-bot, whoop-api, health-tracking, personal-assistant, nlp, productivity, fitness, wellness, ai-assistant, llm, openrouter, deepseek, self-improvement, habit-tracking, mindfulness, python, aiogram, apscheduler
+-->
+
+![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)
+![License](https://img.shields.io/badge/License-MIT-green.svg)
+![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
+
+**Personal day metronome: 6 mindful pings for self-improvement.**
+
+Telegram bot with WHOOP integration and LLM for personalized subconscious programming through daily rituals and physical metrics.
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/FUYOH666/RAS-TGbot.git
-cd RAS-TGbot
+git clone https://github.com/FUYOH666/whoop-telegram-bot-ai.git
+cd whoop-telegram-bot-ai
 uv sync
 cp .env.example .env
 # Fill in your API keys
-uv run python -m ras_bot.main
+uv run python -m whoop_telegram_bot_ai.main
 ```
 
 ## Description
 
-RAS Bot is not just another reminder bot. It's a personal day metronome that helps maintain an ideal rhythm through 6 gentle touches and programs your subconscious for success and abundance.
+Whoop Telegram Bot AI is not just another reminder bot. It's a personal day metronome that helps maintain an ideal rhythm through 6 gentle touches and programs your subconscious for success and abundance.
 
 **Philosophy:** Every message uses Neuro-Linguistic Programming (NLP) principles — positive affirmations in present tense, success visualization, abundance imagery, and big checks. These aren't just reminders, but a subconscious program for creating financial freedom.
 
@@ -31,6 +43,28 @@ RAS Bot is not just another reminder bot. It's a personal day metronome that hel
 4. **S4 — Step to Money** (14:00) — one concrete step to the market
 5. **S5 — Sunset & Presence** (17:30) — beach, sunset, contact with the world
 6. **S6 — Evening Integration** (21:00) — honest day assessment
+
+## 💡 Why This Project?
+
+The WHOOP app is great, but I find it easier to interact with my own assistant integrated into a Telegram bot. The bot provides morning guidance, reminds me of my daily plan, and everything is adapted using LLM and synchronized with physical metrics for personalized recommendations.
+
+**The Idea:** Create a maximally personalized tool for working with the subconscious, discipline, beliefs, and daily plans that correlate with physical body metrics. This helps avoid cognitive biases and unreliable information from social media.
+
+## 👥 Who Is This For?
+
+- **Clients:** Those who want a personal AI assistant for self-improvement with WHOOP integration
+- **Like-minded Developers:** Developers working on similar projects who want to discuss ideas, share experience, or contribute
+- **Researchers:** Those interested in subconscious programming through LLM and integration of physical metrics
+
+## ⚠️ WHOOP Token Problem
+
+**Current Situation:** WHOOP API requires token refresh approximately every hour, which is very inconvenient for users.
+
+**Possible Solution:** Create a script that automatically logs into the WHOOP developer portal every hour, receives the code, and inserts it into Telegram for automatic token refresh.
+
+**Invitation to Discussion:** If you have ideas on how to solve this problem, or want to help with implementation — please contact us! Open an [Issue](https://github.com/FUYOH666/whoop-telegram-bot-ai/issues) or [Discussion](https://github.com/FUYOH666/whoop-telegram-bot-ai/discussions) to discuss.
+
+**Note:** The project uses WHOOP API to get real-time data. The repository also contains a `my_whoop_data_2025_11_17/` folder with example exported data, but the main functionality works through the API.
 
 ## Features
 
@@ -64,8 +98,8 @@ RAS Bot is not just another reminder bot. It's a personal day metronome that hel
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/FUYOH666/RAS-TGbot.git
-cd RAS-TGbot
+git clone https://github.com/FUYOH666/whoop-telegram-bot-ai.git
+cd whoop-telegram-bot-ai
 ```
 
 2. Install dependencies:
@@ -102,7 +136,7 @@ cp .env.example .env
 
 7. Run the bot:
 ```bash
-uv run python -m ras_bot.main
+uv run python -m whoop_telegram_bot_ai.main
 ```
 
 8. Open Telegram and send `/start` command to activate the bot
@@ -134,7 +168,7 @@ uv run python -m ras_bot.main
 
 ## WHOOP Integration
 
-RAS Bot supports WHOOP integration to get physical metrics (Recovery, Sleep, Strain, Workouts) and include them in the evening S6 slot.
+Whoop Telegram Bot AI supports WHOOP integration to get physical metrics (Recovery, Sleep, Strain, Workouts) and include them in the evening S6 slot.
 
 ### WHOOP Setup
 
@@ -202,7 +236,7 @@ WHOOP API has the following limits:
 - **10000 requests per day** — more than enough for daily data updates
 - **100 requests per minute** — sufficient for all bot operations
 
-**Usage in RAS Bot:**
+**Usage in Whoop Telegram Bot AI:**
 - **4 requests** are executed daily (Recovery, Sleep, Strain/Workouts, aggregation) at 22:00
 - If token refresh is needed — **1 additional request**
 - **Total: ~5 requests per day** — only **0.05% of daily limit**

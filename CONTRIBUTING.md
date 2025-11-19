@@ -1,6 +1,6 @@
-# Contributing to RAS Bot
+# Contributing to Whoop Telegram Bot AI
 
-Спасибо за интерес к проекту! Мы рады любым улучшениям и идеям.
+Спасибо за интерес к проекту! Это исследовательский проект для личного использования, и мы рады любым улучшениям и идеям.
 
 Thank you for your interest in the project! We welcome any improvements and ideas.
 
@@ -11,6 +11,14 @@ Thank you for your interest in the project! We welcome any improvements and idea
 Мы открыты к любым идеям! Вот что можно улучшить:
 
 We're open to any ideas! Here's what can be improved:
+
+- **⚠️ Проблема с токенами WHOOP / WHOOP Token Problem** (Приоритет P0)
+  - **Проблема:** WHOOP API требует обновления токена примерно раз в час, что очень неудобно для пользователя
+  - **Problem:** WHOOP API requires token refresh approximately every hour, which is very inconvenient for users
+  - **Возможное решение:** Создать скрипт для автоматического логина на портале разработчика WHOOP раз в час
+  - **Possible Solution:** Create a script for automatic login to WHOOP developer portal every hour
+  - **Приглашение:** Если у вас есть идеи или вы хотите помочь — откройте Issue или Discussion!
+  - **Invitation:** If you have ideas or want to help — open an Issue or Discussion!
 
 - **Дополнительные интеграции** / **Additional Integrations**
   - Apple Health, Google Fit, Garmin, Fitbit

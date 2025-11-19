@@ -1,4 +1,4 @@
-# Multi-stage build для RAS Bot
+# Multi-stage build для Whoop Telegram Bot AI
 # Источник правды: uv.lock
 
 # Stage 1: Builder
@@ -27,16 +27,16 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # Создание непривилегированного пользователя
-RUN useradd -m -u 1000 rasbot && \
-    chown -R rasbot:rasbot /app
+RUN useradd -m -u 1000 whoopbot && \
+    chown -R whoopbot:whoopbot /app
 
 # Копирование зависимостей из builder
-COPY --from=builder --chown=rasbot:rasbot /build/.venv /app/.venv
+COPY --from=builder --chown=whoopbot:whoopbot /build/.venv /app/.venv
 # Копируем файлы напрямую из исходников
-COPY --chown=rasbot:rasbot pyproject.toml /app/
-COPY --chown=rasbot:rasbot README.md /app/
-COPY --chown=rasbot:rasbot src /app/src
-COPY --chown=rasbot:rasbot config.yaml /app/config.yaml
+COPY --chown=whoopbot:whoopbot pyproject.toml /app/
+COPY --chown=whoopbot:whoopbot README.md /app/
+COPY --chown=whoopbot:whoopbot src /app/src
+COPY --chown=whoopbot:whoopbot config.yaml /app/config.yaml
 
 # Установка uv для установки пакета
 RUN pip install --no-cache-dir uv
@@ -45,7 +45,7 @@ RUN pip install --no-cache-dir uv
 RUN uv pip install -e /app
 
 # Переключение на непривилегированного пользователя
-USER rasbot
+USER whoopbot
 
 # Переменные окружения
 ENV PATH="/app/.venv/bin:$PATH" \
@@ -53,5 +53,5 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONPATH="/app"
 
 # Точка входа
-CMD ["python", "-m", "ras_bot.main"]
+CMD ["python", "-m", "whoop_telegram_bot_ai.main"]
 

@@ -1,4 +1,4 @@
-"""Точка входа RAS Bot - инициализация и запуск всех компонентов."""
+"""Точка входа Whoop Telegram Bot AI - инициализация и запуск всех компонентов."""
 
 import asyncio
 import json
@@ -7,13 +7,13 @@ import signal
 import sys
 from pathlib import Path
 
-from ras_bot.bot import RASBot
-from ras_bot.config import Config
-from ras_bot.llm_client import LLMClient
-from ras_bot.scheduler import SlotScheduler
-from ras_bot.stats import StatsCalculator
-from ras_bot.storage import Storage
-from ras_bot.whoop_client import WhoopClient
+from whoop_telegram_bot_ai.bot import WhoopTelegramBotAI
+from whoop_telegram_bot_ai.config import Config
+from whoop_telegram_bot_ai.llm_client import LLMClient
+from whoop_telegram_bot_ai.scheduler import SlotScheduler
+from whoop_telegram_bot_ai.stats import StatsCalculator
+from whoop_telegram_bot_ai.storage import Storage
+from whoop_telegram_bot_ai.whoop_client import WhoopClient
 
 
 def setup_logging(config: Config) -> None:
@@ -142,7 +142,7 @@ async def main() -> None:
         scheduler.setup_scheduler()
 
         # Telegram бот (передаем scheduler для установки user_id)
-        bot = RASBot(config, storage, llm_client, stats_calculator, scheduler, whoop_client)
+        bot = WhoopTelegramBotAI(config, storage, llm_client, stats_calculator, scheduler, whoop_client)
         
         # Устанавливаем бот в планировщик
         scheduler.bot = bot

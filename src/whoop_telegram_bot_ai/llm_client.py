@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 
-from ras_bot.config import Config
+from whoop_telegram_bot_ai.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +28,8 @@ class LLMClient:
             timeout=self.openrouter_config.timeout,
             headers={
                 "Authorization": f"Bearer {self.openrouter_config.api_key}",
-                "HTTP-Referer": "https://github.com/ras-bot",
-                "X-Title": "RAS Bot",
+                "HTTP-Referer": "https://github.com/whoop-telegram-bot-ai",
+                "X-Title": "Whoop Telegram Bot AI",
             },
         )
 

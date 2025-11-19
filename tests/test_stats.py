@@ -6,8 +6,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ras_bot.stats import StatsCalculator
-from ras_bot.storage import Storage
+from whoop_telegram_bot_ai.stats import StatsCalculator
+from whoop_telegram_bot_ai.storage import Storage
 
 
 @pytest.fixture

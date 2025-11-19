@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class Storage:
     """Управление SQLite базой данных для хранения ответов пользователя."""
 
-    def __init__(self, db_path: str = "ras_bot.db"):
+    def __init__(self, db_path: str = "whoop_telegram_bot_ai.db"):
         """
         Инициализация хранилища.
 
