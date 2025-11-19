@@ -11,6 +11,7 @@ Topics: telegram-bot, whoop-api, health-tracking, personal-assistant, productivi
 ![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 ![Status](https://img.shields.io/badge/Status-Research%20Project-yellow.svg)
+![Telegram](https://img.shields.io/badge/Telegram-@ScanovichAI-blue.svg)
 
 > **Исследовательский проект для личного использования**  
 > Telegram-бот с интеграцией WHOOP и AI для персонализированного коучинга продуктивности через ежедневные ритуалы и физические показатели.
@@ -323,6 +324,12 @@ uv run pyright
 - 💬 **Обсуждения** — присоединяйтесь к [Discussions](https://github.com/FUYOH666/whoop-telegram-bot-ai/discussions)
 
 Подробнее о том, как внести вклад, см. [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## 📞 Контакты
+
+По вопросам, предложениям и обсуждению проекта:
+
+- **Telegram:** [@ScanovichAI](https://t.me/ScanovichAI)
 
 ## 📄 Лицензия
 
