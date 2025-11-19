@@ -1,4 +1,4 @@
-# RAS Telegram Bot
+# Whoop Telegram Bot AI
 
 English | [Русский](README.md)
 

@@ -67,7 +67,7 @@ Topics: telegram-bot, whoop-api, health-tracking, personal-assistant, productivi
 
 1. **Клонируйте репозиторий:**
 ```bash
-git clone https://github.com/your-username/whoop-telegram-bot-ai.git
+git clone https://github.com/FUYOH666/whoop-telegram-bot-ai.git
 cd whoop-telegram-bot-ai
 ```
 
@@ -196,7 +196,7 @@ uv run python -m whoop_telegram_bot_ai.main
 - Интеграция с Telegram для автоматического получения кода
 - Использование headless браузера для автоматизации
 
-**Приглашение:** Если у вас есть идеи или вы хотите помочь с реализацией — откройте [Issue](https://github.com/your-username/whoop-telegram-bot-ai/issues) или [Discussion](https://github.com/your-username/whoop-telegram-bot-ai/discussions)!
+**Приглашение:** Если у вас есть идеи или вы хотите помочь с реализацией — откройте [Issue](https://github.com/FUYOH666/whoop-telegram-bot-ai/issues) или [Discussion](https://github.com/FUYOH666/whoop-telegram-bot-ai/discussions)!
 
 ### 📈 Расширенная аналитика
 
@@ -279,9 +279,9 @@ uv run pyright
 
 Мы открыты к любым идеям и улучшениям! Это исследовательский проект, и мы приветствуем:
 
-- 💡 **Идеи** — откройте [Issue](https://github.com/your-username/whoop-telegram-bot-ai/issues)
-- 🔧 **Улучшения** — создайте [Pull Request](https://github.com/your-username/whoop-telegram-bot-ai/pulls)
-- 💬 **Обсуждения** — присоединяйтесь к [Discussions](https://github.com/your-username/whoop-telegram-bot-ai/discussions)
+- 💡 **Идеи** — откройте [Issue](https://github.com/FUYOH666/whoop-telegram-bot-ai/issues)
+- 🔧 **Улучшения** — создайте [Pull Request](https://github.com/FUYOH666/whoop-telegram-bot-ai/pulls)
+- 💬 **Обсуждения** — присоединяйтесь к [Discussions](https://github.com/FUYOH666/whoop-telegram-bot-ai/discussions)
 
 Подробнее о том, как внести вклад, см. [CONTRIBUTING.md](CONTRIBUTING.md).
 

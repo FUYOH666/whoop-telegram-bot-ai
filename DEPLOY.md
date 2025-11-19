@@ -161,13 +161,13 @@
 
 ```bash
 # На вашем компьютере
-scp -r /path/to/whoop-telegram-bot-ai user@your-server:/opt/ras-bot
+scp -r /path/to/whoop-telegram-bot-ai user@your-server:/opt/whoop-telegram-bot-ai
 ```
 
 2. **На сервере создайте `.env` файл:**
 
 ```bash
-cd /opt/ras-bot
+cd /opt/whoop-telegram-bot-ai
 nano .env
 # Вставьте ваши секреты:
 # TELEGRAM_BOT_TOKEN=...
@@ -212,19 +212,19 @@ docker-compose up -d
 
 ### Создание service файла
 
-Создайте файл `/etc/systemd/system/ras-bot.service`:
+Создайте файл `/etc/systemd/system/whoop-telegram-bot-ai.service`:
 
 ```ini
 [Unit]
-Description=RAS Telegram Bot
+Description=Whoop Telegram Bot AI
 After=network.target
 
 [Service]
 Type=simple
-User=your-username
-WorkingDirectory=/opt/ras-bot
-Environment="PATH=/opt/ras-bot/.venv/bin:/usr/local/bin:/usr/bin:/bin"
-ExecStart=/opt/ras-bot/.venv/bin/python -m whoop_telegram_bot_ai.main
+User=whoopbot
+WorkingDirectory=/opt/whoop-telegram-bot-ai
+Environment="PATH=/opt/whoop-telegram-bot-ai/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/opt/whoop-telegram-bot-ai/.venv/bin/python -m whoop_telegram_bot_ai.main
 Restart=always
 RestartSec=10
 StandardOutput=journal
@@ -238,19 +238,19 @@ WantedBy=multi-user.target
 
 ```bash
 # Запуск
-sudo systemctl start ras-bot
+sudo systemctl start whoop-telegram-bot-ai
 
 # Автозапуск при загрузке системы
-sudo systemctl enable ras-bot
+sudo systemctl enable whoop-telegram-bot-ai
 
 # Проверка статуса
-sudo systemctl status ras-bot
+sudo systemctl status whoop-telegram-bot-ai
 
 # Просмотр логов
-sudo journalctl -u ras-bot -f
+sudo journalctl -u whoop-telegram-bot-ai -f
 
 # Остановка
-sudo systemctl stop ras-bot
+sudo systemctl stop whoop-telegram-bot-ai
 ```
 
 ## Вариант 3: Screen/Tmux (быстрое решение)
@@ -264,16 +264,16 @@ sudo apt install screen  # Debian/Ubuntu
 sudo yum install screen  # CentOS/RHEL
 
 # Создание сессии
-screen -S ras-bot
+screen -S whoop-telegram-bot-ai
 
 # Запуск бота
-cd /opt/ras-bot
+cd /opt/whoop-telegram-bot-ai
 uv run python -m whoop_telegram_bot_ai.main
 
 # Отключение: Ctrl+A, затем D
 
 # Подключение обратно
-screen -r ras-bot
+screen -r whoop-telegram-bot-ai
 ```
 
 ### Использование tmux:
@@ -283,16 +283,16 @@ screen -r ras-bot
 sudo apt install tmux
 
 # Создание сессии
-tmux new -s ras-bot
+tmux new -s whoop-telegram-bot-ai
 
 # Запуск бота
-cd /opt/ras-bot
+cd /opt/whoop-telegram-bot-ai
 uv run python -m whoop_telegram_bot_ai.main
 
 # Отключение: Ctrl+B, затем D
 
 # Подключение обратно
-tmux attach -t ras-bot
+tmux attach -t whoop-telegram-bot-ai
 ```
 
 ## Рекомендации
@@ -320,7 +320,7 @@ tmux attach -t ras-bot
 
 **Бот не запускается:**
 - Проверьте `.env` файл и секреты
-- Проверьте логи: `docker-compose logs` или `journalctl -u ras-bot`
+- Проверьте логи: `docker-compose logs` или `journalctl -u whoop-telegram-bot-ai`
 - Убедитесь, что порты не заняты
 
 **Бот не отправляет сообщения:**
